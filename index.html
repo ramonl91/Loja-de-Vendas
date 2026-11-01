@@ -43,6 +43,10 @@ input,textarea,select{width:100%;padding:11px;border:1px solid var(--bd);border-
 .chip{flex:none;padding:8px 14px;border-radius:20px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font:inherit;font-size:.85rem;cursor:pointer}
 .chip.on{background:var(--pri);color:#fff;border-color:var(--pri)}
 .cl{border-bottom:1px solid var(--bd);padding:12px 0}.cl .m{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0;font-size:.88rem}.cl .m b{color:var(--pri)}
+.cw{position:relative}.car{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}.car::-webkit-scrollbar{display:none}
+.car img{flex:none;width:100%;aspect-ratio:1;object-fit:cover;scroll-snap-align:start}
+.ar{position:absolute;top:50%;transform:translateY(-50%);width:30px;height:30px;border:0;border-radius:50%;background:rgba(0,0,0,.45);color:#fff;font-size:1.2rem;line-height:1;cursor:pointer}.ar.l{left:6px}.ar.r{right:6px}
+.dt{position:absolute;bottom:6px;left:0;right:0;display:flex;justify-content:center;gap:5px}.dt i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.55)}.dt i.on{background:#fff}
 </style>
 </head>
 <body>
@@ -59,13 +63,21 @@ const money=n=>Number(n||0).toLocaleString("pt-BR",{style:"currency",currency:"B
 const slugify=t=>t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
 const q=async p=>{const {data,error}=await p;if(error){alert("Algo deu errado: "+error.message);return null}return data==null?true:data};
 const novo=()=>({produtos:[],categorias:[],clientes:[],vendas:[],loja:null});
-let D=novo(),tab="produtos",uid=null,edit=null,ec=null,aberto=null,blob=null,gf="",cart={},modo="entrar";
+let D=novo(),tab="produtos",uid=null,edit=null,ec=null,aberto=null,fotosEdit=[],rem=[],gf="",cart={},modo="entrar";
 const SLUG=new URLSearchParams(location.search).get("loja");
 // Depois de publicar na Vercel, coloque aqui o endereço do site entre as aspas. Exemplo: "https://minhaloja.vercel.app/"
 const SITE_URL="";
 const base=()=>SITE_URL||location.href.split("?")[0].split("#")[0];
 const catNome=id=>(D.categorias.find(c=>c.id===id)||{}).nome||"";
-const img=p=>p.foto_url?`<img src="${esc(p.foto_url)}" alt="${esc(p.nome)}" loading="lazy">`:`<div class="ph">📷</div>`;
+const lista=p=>p.fotos&&p.fotos.length?p.fotos:(p.foto_url?[p.foto_url]:[]);
+const img=p=>{const u=lista(p)[0];return u?`<img src="${esc(u)}" alt="${esc(p.nome)}" loading="lazy">`:`<div class="ph">📷</div>`};
+function galeria(p){
+  const u=lista(p);
+  if(u.length<2)return img(p);
+  return `<div class="cw"><div class="car" onscroll="dots(this)">${u.map(x=>`<img src="${esc(x)}" alt="${esc(p.nome)}" loading="lazy">`).join("")}</div><button class="ar l" onclick="rolar(this,-1)" aria-label="Anterior">‹</button><button class="ar r" onclick="rolar(this,1)" aria-label="Próxima">›</button><div class="dt">${u.map((_,i)=>`<i class="${i?"":"on"}"></i>`).join("")}</div></div>`;
+}
+function dots(el){const i=Math.round(el.scrollLeft/el.clientWidth);el.parentNode.querySelectorAll(".dt i").forEach((d,k)=>d.className=k===i?"on":"")}
+function rolar(b,d){const c=b.parentNode.querySelector(".car");c.scrollBy({left:d*c.clientWidth,behavior:"smooth"})}
 const prev=u=>`<img src="${u}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;margin-top:8px" alt="">`;
 const porNome=(a,b)=>a.nome.localeCompare(b.nome);
 
@@ -158,7 +170,7 @@ function vCat(){
   const ids=[...new Set(D.produtos.map(p=>p.categoria_id).filter(Boolean))];
   const b=(i,l)=>`<button class="chip ${gf===i?"on":""}" data-g="${i}" onclick="gf=this.dataset.g;draw()">${esc(l)}</button>`;
   let h=ids.length?`<div class="chips">${b("","Todos")}${ids.map(i=>b(i,catNome(i))).join("")}</div>`:"";
-  h+=ds.length?`<div class="grid">${ds.map(p=>`<div class="p">${img(p)}<div class="i"><b>${esc(p.nome)}</b><small>${esc(p.descricao)}</small><span class="price">${money(p.preco)}</span><small>${p.estoque} em estoque</small><button class="btn" onclick="add('${p.id}')">Adicionar</button></div></div>`).join("")}</div>`:`<div class="empty">Nenhum produto disponível no momento.</div>`;
+  h+=ds.length?`<div class="grid">${ds.map(p=>`<div class="p">${galeria(p)}<div class="i"><b>${esc(p.nome)}</b><small>${esc(p.descricao)}</small><span class="price">${money(p.preco)}</span><small>${p.estoque} em estoque</small><button class="btn" onclick="add('${p.id}')">Adicionar</button></div></div>`).join("")}</div>`:`<div class="empty">Nenhum produto disponível no momento.</div>`;
   if(n)h+=`<div class="cart"><button class="btn" onclick="enviar()">Enviar pedido no WhatsApp (${n} ${n>1?"itens":"item"})</button></div>`;
   return h;
 }
@@ -175,31 +187,104 @@ function enviar(){
 function vProd(){
   const e=edit?D.produtos.find(p=>p.id===edit):null;
   return `<div class="card"><h2>${e?"Editando: "+esc(e.nome):"Novo produto"}</h2>
-  <label>Foto</label><div class="row"><button class="btn" onclick="tirarFoto()">📸 Tirar foto agora</button><button class="btn sec" onclick="$('#gal').click()">🖼️ Escolher da galeria</button></div>
+  <label>Fotos do produto (até 3)</label><div class="row"><button class="btn" onclick="tirarFoto()">📸 Tirar foto agora</button><button class="btn sec" onclick="if(fotosEdit.length>=3)alert('Máximo de 3 fotos. Exclua uma para adicionar outra.');else $('#gal').click()">🖼️ Escolher da galeria</button></div>
   <input id="cam" type="file" accept="image/*" capture="environment" hidden onchange="lerFoto(this)"><input id="gal" type="file" accept="image/*" hidden onchange="lerFoto(this)">
-  <div id="prev">${e&&e.foto_url?prev(esc(e.foto_url)):""}</div>
+  <div id="fotos">${fotosHTML()}</div>
   <label>Nome</label><input id="fn" value="${esc(e&&e.nome)}">
   <label>Grupo / categoria (ex.: Natura, Boticário)</label><input id="fg" list="gl" placeholder="Escolha um grupo ou digite um novo" value="${esc(e&&catNome(e.categoria_id))}"><datalist id="gl">${D.categorias.map(c=>`<option value="${esc(c.nome)}">`).join("")}</datalist>
   <div class="row"><div><label>Preço (R$)</label><input id="fp" type="number" step="0.01" min="0" value="${e?e.preco:""}"></div><div><label>Estoque</label><input id="fe" type="number" min="0" value="${e?e.estoque:""}"></div></div>
   <label>Descrição</label><textarea id="fd" rows="3">${esc(e&&e.descricao)}</textarea>
-  <div class="row" style="margin-top:12px"><button id="sv" class="btn" onclick="salvarP()">${e?"Salvar alterações":"Adicionar produto"}</button>${e?`<button class="btn sec" onclick="edit=null;blob=null;draw()">Cancelar</button>`:""}</div></div>
-  <div class="card"><h2>Meus produtos (${D.produtos.length})</h2>${D.produtos.length?D.produtos.map(p=>`<div class="it">${img(p)}<div class="t"><b>${esc(p.nome)}</b><small>${catNome(p.categoria_id)?esc(catNome(p.categoria_id))+" · ":""}${money(p.preco)} · <span class="${p.estoque<=2?"low":""}">${p.estoque} em estoque</span></small></div><button class="btn sec" onclick="edit='${p.id}';blob=null;draw();scrollTo(0,0)">Editar</button><button class="btn sec" onclick="delP('${p.id}')">🗑️</button></div>`).join(""):`<div class="empty">Nenhum produto ainda. Adicione o primeiro acima.</div>`}</div>`;
+  <div class="row" style="margin-top:12px"><button id="sv" class="btn" onclick="salvarP()">${e?"Salvar alterações":"Adicionar produto"}</button>${e?`<button class="btn sec" onclick="edit=null;fotosEdit=[];rem=[];draw()">Cancelar</button>`:""}</div></div>
+  <div class="card"><h2>Meus produtos (${D.produtos.length})</h2>${D.produtos.length?D.produtos.map(p=>`<div class="it">${img(p)}<div class="t"><b>${esc(p.nome)}</b><small>${catNome(p.categoria_id)?esc(catNome(p.categoria_id))+" · ":""}${money(p.preco)} · <span class="${p.estoque<=2?"low":""}">${p.estoque} em estoque</span></small></div><button class="btn sec" onclick="iniEdit('${p.id}')">Editar</button><button class="btn sec" onclick="delP('${p.id}')">🗑️</button></div>`).join(""):`<div class="empty">Nenhum produto ainda. Adicione o primeiro acima.</div>`}</div>`;
 }
 function reduzir(f,max,tipo,cb){
   const r=new FileReader();
   r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement("canvas");c.width=i.width*k;c.height=i.height*k;c.getContext("2d").drawImage(i,0,0,c.width,c.height);c.toBlob(cb,tipo,.75)};i.src=r.result};
   r.readAsDataURL(f);
 }
+function fotosHTML(){
+  const n=fotosEdit.length;
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${fotosEdit.map((f,i)=>`<div style="position:relative;width:92px"><img src="${esc(f.prev)}" style="width:92px;height:92px;object-fit:cover;border-radius:10px;display:block" alt=""><button class="btn" type="button" style="position:absolute;top:3px;right:3px;padding:2px 8px;background:var(--warn)" onclick="rmFoto(${i})" aria-label="Excluir foto">✕</button>${i===0?`<small style="display:block;text-align:center;color:var(--pri)">Capa</small>`:`<button class="btn sec" type="button" style="width:100%;padding:3px;font-size:.72rem;margin-top:2px" onclick="capa(${i})">Tornar capa</button>`}</div>`).join("")}</div><small style="color:var(--mut)">${n}/3 fotos</small>`;
+}
+const attF=()=>{$("#fotos").innerHTML=fotosHTML()};
+function iniEdit(id){const p=D.produtos.find(x=>x.id===id);edit=id;rem=[];fotosEdit=lista(p).map(u=>({url:u,prev:u}));draw();scrollTo(0,0)}
+function rmFoto(i){if(!confirm("Excluir esta foto?"))return;const f=fotosEdit[i];if(f.url)rem.push(f.url);fotosEdit.splice(i,1);attF()}
+function capa(i){fotosEdit.unshift(fotosEdit.splice(i,1)[0]);attF()}
+const pathDe=u=>{const k="/fotos/",i=(u||"").indexOf(k);if(i<0)return null;const t=decodeURIComponent(u.slice(i+k.length));return t.startsWith(uid+"/")?t:null};
+const limpar=us=>{const l=us.map(pathDe).filter(Boolean);if(l.length)db.storage.from("fotos").remove(l)};
+async function addFoto(f){
+  if(fotosEdit.length>=3){alert("Máximo de 3 fotos. Exclua uma para adicionar outra.");return}
+  const b=await cortar(f,false);if(!b)return;
+  fotosEdit.push({blob:b,prev:URL.createObjectURL(b)});attF();
+}
+function lerFoto(el){const f=el.files[0];el.value="";if(f)addFoto(f)}
 async function tirarFoto(){
+  if(fotosEdit.length>=3){alert("Máximo de 3 fotos. Exclua uma para adicionar outra.");return}
   const C=window.Capacitor,cam=C&&C.isNativePlatform&&C.isNativePlatform()&&C.Plugins&&C.Plugins.Camera;
   if(!cam){$("#cam").click();return}
-  try{
-    const r=await cam.getPhoto({quality:80,resultType:"dataUrl",source:"CAMERA",width:1000});
-    const b=await (await fetch(r.dataUrl)).blob();
-    reduzir(b,700,"image/jpeg",x=>{blob=x;$("#prev").innerHTML=prev(URL.createObjectURL(x))});
-  }catch(e){}
+  try{const r=await cam.getPhoto({quality:80,resultType:"dataUrl",source:"CAMERA",width:1400});addFoto(await (await fetch(r.dataUrl)).blob())}catch(e){}
 }
-function lerFoto(el){const f=el.files[0];if(!f)return;reduzir(f,700,"image/jpeg",b=>{blob=b;$("#prev").innerHTML=prev(URL.createObjectURL(b))})}
+
+/* FERRAMENTA DE CORTE */
+function cortar(file,logo){
+  return new Promise(res=>{
+    const fr=new FileReader();
+    fr.onload=()=>{const im=new Image();im.onload=()=>abrirCorte(im,logo,res);im.src=fr.result};
+    fr.readAsDataURL(file);
+  });
+}
+function branco(c,S,tol){
+  const im=c.getImageData(0,0,S,S),d=im.data;let r=0,g=0,b=0,n=0;
+  for(const [x0,y0] of [[0,0],[S-6,0],[0,S-6],[S-6,S-6]])for(let y=y0;y<y0+6;y++)for(let x=x0;x<x0+6;x++){const i=(y*S+x)*4;r+=d[i];g+=d[i+1];b+=d[i+2];n++}
+  r/=n;g/=n;b/=n;
+  const seen=new Uint8Array(S*S),st=new Int32Array(S*S);let sp=0;
+  const T=tol*tol,ok=p=>{const i=p*4,a=d[i]-r,e=d[i+1]-g,f=d[i+2]-b;return a*a+e*e+f*f<T};
+  const push=p=>{if(!seen[p]&&ok(p)){seen[p]=1;st[sp++]=p}};
+  for(let i=0;i<S;i++){push(i);push((S-1)*S+i);push(i*S);push(i*S+S-1)}
+  while(sp){const p=st[--sp],x=p%S,y=(p-x)/S;if(x>0)push(p-1);if(x<S-1)push(p+1);if(y>0)push(p-S);if(y<S-1)push(p+S)}
+  for(let p=0;p<S*S;p++)if(seen[p]){const i=p*4;d[i]=d[i+1]=d[i+2]=255;d[i+3]=255}
+  c.putImageData(im,0,0);
+}
+function abrirCorte(im,logo,res){
+  const S=320,W=im.naturalWidth,H=im.naturalHeight,cover=Math.max(S/W,S/H),fit=Math.min(S/W,S/H);
+  let sc=cover,ox=(S-W*sc)/2,oy=(S-H*sc)/2;
+  const m=document.createElement("div");m.id="mc";
+  m.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto";
+  m.innerHTML=`<div class="card" style="width:100%;max-width:380px;margin:0"><h2>Ajustar ${logo?"logo":"foto"}</h2>
+  <canvas id="mcv" width="${S}" height="${S}" style="width:100%;aspect-ratio:1;touch-action:none;border:1px solid var(--bd);background:#fff;cursor:grab;${logo?"border-radius:50%":"border-radius:12px"}"></canvas>
+  <small style="color:var(--mut)">Arraste a imagem para enquadrar e use o zoom.</small>
+  <label>Zoom</label><input id="mz" type="range" min="${fit*0.5}" max="${cover*4}" step="0.005" value="${sc}">
+  <label style="display:flex;gap:8px;align-items:center;color:var(--tx)"><input id="mf" type="checkbox" style="width:auto"> Deixar o fundo branco</label>
+  <div id="mfw" hidden><label>Intensidade da limpeza do fundo</label><input id="mi" type="range" min="15" max="120" value="45"><small style="color:var(--mut)">Funciona melhor com fundo liso e foto que preenche o quadro.</small></div>
+  <div class="row" style="margin-top:12px"><button class="btn sec" id="mx">Cancelar</button><button class="btn" id="mo">Usar foto</button></div></div>`;
+  document.body.appendChild(m);
+  const cv=$("#mcv"),cx=cv.getContext("2d",{willReadFrequently:true});
+  const pinta=(c,k)=>{
+    const f=$("#mf").checked;c.clearRect(0,0,S*k,S*k);
+    if(!logo||f){c.fillStyle="#fff";c.fillRect(0,0,S*k,S*k)}
+    c.drawImage(im,ox*k,oy*k,W*sc*k,H*sc*k);
+    if(f)branco(c,S*k,+$("#mi").value);
+  };
+  let t=0;const sched=()=>{if(t)return;t=requestAnimationFrame(()=>{t=0;pinta(cx,1)})};
+  pinta(cx,1);
+  let dr=null;
+  cv.onpointerdown=e=>{dr={x:e.clientX,y:e.clientY,ox,oy};cv.setPointerCapture(e.pointerId)};
+  cv.onpointermove=e=>{if(!dr)return;const k=S/cv.clientWidth;ox=dr.ox+(e.clientX-dr.x)*k;oy=dr.oy+(e.clientY-dr.y)*k;sched()};
+  cv.onpointerup=cv.onpointercancel=()=>{dr=null};
+  $("#mz").oninput=e=>{const n=+e.target.value,a=(S/2-ox)/sc,b=(S/2-oy)/sc;sc=n;ox=S/2-a*sc;oy=S/2-b*sc;sched()};
+  $("#mf").onchange=()=>{$("#mfw").hidden=!$("#mf").checked;sched()};
+  $("#mi").oninput=sched;
+  $("#mx").onclick=()=>{m.remove();res(null)};
+  $("#mo").onclick=()=>{
+    const OUT=logo?400:800,o=document.createElement("canvas");o.width=o.height=OUT;
+    const oc=o.getContext("2d",{willReadFrequently:true});
+    const f=$("#mf").checked;
+    if(!logo||f){oc.fillStyle="#fff";oc.fillRect(0,0,OUT,OUT)}
+    const q2=OUT/S;oc.drawImage(im,ox*q2,oy*q2,W*sc*q2,H*sc*q2);
+    if(f)branco(oc,OUT,+$("#mi").value*1);
+    o.toBlob(b=>{m.remove();res(b)},logo?"image/png":"image/jpeg",.85);
+  };
+}
 async function up(b,ext){
   const path=uid+"/"+Date.now()+"."+ext;
   const {error}=await db.storage.from("fotos").upload(path,b,{contentType:b.type});
@@ -216,10 +301,12 @@ async function salvarP(){
     if(!c){c=await q(db.from("categorias").insert({nome:gn}).select().single());if(!c){fim();return}}
     cid=c.id}
   const d={nome,preco,estoque:est,descricao:$("#fd").value.trim(),categoria_id:cid};
-  if(blob){const u=await up(blob,"jpg");if(u)d.foto_url=u}
+  const urls=[];
+  for(const f of fotosEdit){if(f.url)urls.push(f.url);else{const u=await up(f.blob,"jpg");if(!u){fim();return}urls.push(u)}}
+  d.fotos=urls;d.foto_url=urls[0]||null;
   const r=await q(edit?db.from("produtos").update(d).eq("id",edit):db.from("produtos").insert(d));
   if(!r){fim();return}
-  edit=null;blob=null;await load();draw();
+  limpar(rem);rem=[];edit=null;fotosEdit=[];await load();draw();
 }
 async function delP(id){
   const p=D.produtos.find(x=>x.id===id);
@@ -314,16 +401,17 @@ async function salvarC(){
   const d={nome:$("#cn").value.trim()||"Minha Loja",whatsapp:$("#cz").value.trim()};
   if(await q(db.from("lojas").update(d).eq("id",uid))){await load();draw();alert("Salvo!")}
 }
-function lerLogo(el){
-  const f=el.files[0];if(!f)return;
-  reduzir(f,300,"image/png",async b=>{
-    const u=await up(b,"png");if(!u)return;
-    if(await q(db.from("lojas").update({logo_url:u}).eq("id",uid))){D.loja.logo_url=u;draw()}
-  });
+async function lerLogo(el){
+  const f=el.files[0];el.value="";if(!f)return;
+  const b=await cortar(f,true);if(!b)return;
+  const u=await up(b,"png");if(!u)return;
+  const velho=D.loja.logo_url;
+  if(await q(db.from("lojas").update({logo_url:u}).eq("id",uid))){D.loja.logo_url=u;limpar([velho]);draw()}
 }
 async function rmLogo(){
   if(!D.loja.logo_url||!confirm("Remover a logo da loja?"))return;
-  if(await q(db.from("lojas").update({logo_url:null}).eq("id",uid))){D.loja.logo_url=null;draw()}
+  const velho=D.loja.logo_url;
+  if(await q(db.from("lojas").update({logo_url:null}).eq("id",uid))){D.loja.logo_url=null;limpar([velho]);draw()}
 }
 function copiar(){const l=base()+"?loja="+D.loja.slug;try{navigator.clipboard.writeText(l);alert("Link copiado!")}catch(e){alert("Copie manualmente o link do campo.")}}
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.closest&&e.target.closest("#auth")){e.preventDefault();const b=$("#abtn");if(b)b.click()}});
