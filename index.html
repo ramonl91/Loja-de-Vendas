@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Minha Loja</title>
+<style>
+:root{--bg:#f5f0f8;--card:#fff;--tx:#2a1a33;--mut:#7a6a86;--pri:#5b2a86;--pri2:#43206a;--bd:#e4d9ec;--warn:#c2410c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#170f1e;--card:#221730;--tx:#f3ecf8;--mut:#b3a3c2;--pri:#9b5de5;--pri2:#8445cc;--bd:#35254a;--warn:#fb923c}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--tx);line-height:1.4}
+header{background:linear-gradient(135deg,#3b1760,#7b3fb0);color:#fff;padding:18px 16px;text-align:center}
+header h1{margin:0;font-size:1.4rem}
+.lg{display:none;width:68px;height:68px;border-radius:50%;object-fit:contain;background:#fff;border:3px solid rgba(255,255,255,.65);margin:0 auto 8px}
+nav{display:flex;gap:6px;padding:10px;max-width:900px;margin:auto}
+nav button{flex:1;padding:12px 6px;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:12px;font-size:.85rem;cursor:pointer}
+nav button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+main{max-width:900px;margin:auto;padding:10px 12px 90px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:14px;margin-bottom:12px}
+h2{margin:0 0 10px;font-size:1.15rem}
+label{display:block;font-size:.85rem;color:var(--mut);margin:8px 0 3px}
+input,textarea,select{width:100%;padding:11px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font:inherit}
+.btn{padding:11px 16px;border:0;border-radius:10px;background:var(--pri);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.6}.btn.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.p{background:var(--card);border:1px solid var(--bd);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.p img,.ph{width:100%;aspect-ratio:1;object-fit:cover;background:var(--bd);display:flex;align-items:center;justify-content:center;font-size:2.5rem}
+.p .i{padding:10px;display:flex;flex-direction:column;gap:4px;flex:1}
+.p small{color:var(--mut)}.price{color:var(--pri);font-weight:700;font-size:1.05rem}.p .i .btn{margin-top:auto;padding:9px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px}
+.stat span{color:var(--mut);font-size:.8rem}.stat b{display:block;font-size:1.25rem;color:var(--pri)}
+.it{display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--bd);padding:8px 0}
+.it img,.it .ph{width:54px;height:54px;border-radius:10px;object-fit:cover;font-size:1.4rem;flex:none}
+.it .t{flex:1;min-width:0}.it .t small{display:block;color:var(--mut)}
+.low{color:var(--warn);font-weight:600}
+.cart{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));max-width:876px;margin:auto}
+.cart .btn{width:100%;padding:15px;font-size:1rem;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.empty{text-align:center;color:var(--mut);padding:30px 10px}
+.tip{background:var(--bg);border:1px dashed var(--bd);border-radius:10px;padding:10px;font-size:.85rem;color:var(--mut);margin-top:8px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px}
+.chip{flex:none;padding:8px 14px;border-radius:20px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font:inherit;font-size:.85rem;cursor:pointer}
+.chip.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.cl{border-bottom:1px solid var(--bd);padding:12px 0}.cl .m{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0;font-size:.88rem}.cl .m b{color:var(--pri)}
+</style>
+</head>
+<body>
+<header><img id="hl" class="lg" alt="Logo da loja"><h1 id="hn">Minha Loja</h1></header>
+<nav id="nav" style="display:none"></nav>
+<main id="app"><div class="empty">Carregando...</div></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+<script>
+const SB_URL="https://xgarabyshogrjgafbtga.supabase.co",SB_KEY="sb_publishable_lwkCcTlfzKpQ3d-ZK-nanw_ssgbyv0V";
+const db=supabase.createClient(SB_URL,SB_KEY);
+const $=s=>document.querySelector(s);
+const esc=t=>String(t==null?"":t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const money=n=>Number(n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const slugify=t=>t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+const q=async p=>{const {data,error}=await p;if(error){alert("Algo deu errado: "+error.message);return null}return data==null?true:data};
+const novo=()=>({produtos:[],categorias:[],clientes:[],vendas:[],loja:null});
+let D=novo(),tab="produtos",uid=null,edit=null,ec=null,aberto=null,blob=null,gf="",cart={},modo="entrar";
+const SLUG=new URLSearchParams(location.search).get("loja");
+// Depois de publicar na Vercel, coloque aqui o endereço do site entre as aspas. Exemplo: "https://minhaloja.vercel.app/"
+const SITE_URL="";
+const base=()=>SITE_URL||location.href.split("?")[0].split("#")[0];
+const catNome=id=>(D.categorias.find(c=>c.id===id)||{}).nome||"";
+const img=p=>p.foto_url?`<img src="${esc(p.foto_url)}" alt="${esc(p.nome)}" loading="lazy">`:`<div class="ph">📷</div>`;
+const prev=u=>`<img src="${u}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;margin-top:8px" alt="">`;
+const porNome=(a,b)=>a.nome.localeCompare(b.nome);
+
+async function init(){
+  if(SLUG){
+    const {data:l}=await db.from("lojas").select("*").eq("slug",SLUG).maybeSingle();
+    if(!l){$("#app").innerHTML='<div class="empty">Loja não encontrada.</div>';return}
+    D.loja=l;document.title=l.nome;
+    const [p,c]=await Promise.all([db.from("produtos").select("*").eq("loja_id",l.id).gt("estoque",0),db.from("categorias").select("*").eq("loja_id",l.id)]);
+    D.produtos=(p.data||[]).sort(porNome);D.categorias=c.data||[];
+  }else{
+    const {data:{session}}=await db.auth.getSession();
+    const rec=location.hash.includes("type=recovery");
+    if(rec)modo="nova";else if(session){uid=session.user.id;await load()}
+  }
+  draw();
+}
+async function load(){
+  const t=(n,f)=>db.from(n).select("*").eq(f,uid);
+  const [l,p,c,k,v]=await Promise.all([t("lojas","id"),t("produtos","loja_id"),t("categorias","loja_id"),t("clientes","loja_id"),t("vendas","loja_id")]);
+  D.loja=(l.data||[])[0]||null;
+  if(!D.loja){const r=await db.from("lojas").insert({nome:"Minha Loja",slug:uid.replace(/-/g,"")}).select().single();D.loja=r.data}
+  D.produtos=(p.data||[]).sort(porNome);D.categorias=(c.data||[]).sort(porNome);D.clientes=(k.data||[]).sort(porNome);
+  D.vendas=(v.data||[]).sort((a,b)=>new Date(a.criado_em)-new Date(b.criado_em));
+}
+function draw(){
+  const L=D.loja,lg=$("#hl"),nv=$("#nav");
+  $("#hn").textContent=(L&&L.nome)||"Minha Loja";
+  if(L&&L.logo_url){lg.src=L.logo_url;lg.style.display="block"}else lg.style.display="none";
+  if(SLUG){nv.style.display="none";$("#app").innerHTML=vCat();return}
+  if(!uid){nv.style.display="none";$("#app").innerHTML=vAuth();return}
+  nv.style.display="flex";
+  nv.innerHTML=[["produtos","📦 Produtos"],["vendas","💰 Vendas"],["clientes","👥 Clientes"],["config","⚙️ Ajustes"]].map(([k,l])=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';draw()">${l}</button>`).join("");
+  $("#app").innerHTML=({produtos:vProd,vendas:vVen,clientes:vCli,config:vCfg})[tab]();
+}
+
+/* ENTRAR / CRIAR LOJA */
+function pw(id,ac){return `<div style="position:relative"><input id="${id}" type="password" autocomplete="${ac}" style="padding-right:48px"><button type="button" onclick="ver('${id}',this)" aria-label="Mostrar ou ocultar senha" style="position:absolute;right:4px;top:4px;bottom:4px;width:40px;border:0;background:transparent;font-size:1.1rem;cursor:pointer">👁️</button></div>`}
+function ver(id,b){const i=$("#"+id),m=i.type==="password";i.type=m?"text":"password";b.textContent=m?"🙈":"👁️"}
+function vAuth(){
+  const c=modo==="criar",e=modo==="esqueci",n=modo==="nova";
+  const tit=c?"Criar minha loja":e?"Recuperar senha":n?"Criar nova senha":"Entrar";
+  const acao=c?"criar()":e?"recuperar()":n?"novaSenha()":"entrar()";
+  const lnk=(m,t)=>`<a href="#" onclick="modo='${m}';draw();return false" style="color:var(--pri)">${t}</a>`;
+  return `<div id="auth" class="card" style="max-width:420px;margin:20px auto"><h2>${tit}</h2>
+  ${c?`<label>Nome da loja</label><input id="an" oninput="sg()"><label>Endereço do catálogo (sem espaços)</label><input id="as" placeholder="ex: natura-maria" oninput="this.dataset.t=1">`:""}
+  ${n?"":`<label>E-mail</label><input id="ae" type="email" autocomplete="email">`}
+  ${e?`<div class="tip">Enviaremos um link para você criar uma nova senha.</div>`:`<label>${n?"Nova senha":"Senha"} ${c||n?"(mínimo 6 caracteres)":""}</label>${pw("ap",c||n?"new-password":"current-password")}`}
+  ${c||n?`<label>Confirmar senha</label>${pw("ap2","new-password")}`:""}
+  <div style="margin-top:12px"><button id="abtn" class="btn" style="width:100%" onclick="${acao}">${tit}</button></div>
+  <p style="text-align:center;line-height:2">${modo==="entrar"?lnk("esqueci","Esqueci minha senha")+"<br>"+lnk("criar","Criar minha loja"):n?"":lnk("entrar","Voltar para entrar")}</p></div>`;
+}
+function sg(){const s=$("#as");if(!s.dataset.t)s.value=slugify($("#an").value)}
+async function entrar(){
+  const {data,error}=await db.auth.signInWithPassword({email:$("#ae").value.trim(),password:$("#ap").value});
+  if(error){alert(/confirm/i.test(error.message)?"Seu e-mail ainda não foi confirmado. Abra o link que enviamos para o seu e-mail.":"E-mail ou senha incorretos. Use o olhinho 👁️ para conferir a senha digitada.");return}
+  uid=data.user.id;await load();tab="produtos";draw();
+}
+async function criar(){
+  const nome=$("#an").value.trim(),slug=slugify($("#as").value),email=$("#ae").value.trim(),senha=$("#ap").value;
+  if(!nome||!slug||!email||senha.length<6){alert("Preencha todos os campos. A senha precisa ter 6 caracteres ou mais.");return}
+  if(senha!==$("#ap2").value){alert("As senhas digitadas não são iguais.");return}
+  const {data:ex}=await db.from("lojas").select("id").eq("slug",slug).maybeSingle();
+  if(ex){alert("Esse endereço já está em uso. Escolha outro.");return}
+  const {data,error}=await db.auth.signUp({email,password:senha,options:{data:{nome,slug}}});
+  if(error){alert("Não foi possível criar a conta: "+error.message);return}
+  if(!data.session){alert("Conta criada! Confirme o link enviado ao seu e-mail e depois entre.");modo="entrar";draw();return}
+  uid=data.user.id;await load();tab="produtos";draw();
+}
+async function recuperar(){
+  const email=$("#ae").value.trim();if(!email){alert("Digite o seu e-mail.");return}
+  const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:base()});
+  if(error){alert("Não foi possível enviar: "+error.message);return}
+  alert("Se esse e-mail estiver cadastrado, você receberá um link para criar uma nova senha. Olhe também a caixa de spam.");modo="entrar";draw();
+}
+async function novaSenha(){
+  const a=$("#ap").value;
+  if(a.length<6){alert("A senha precisa ter 6 caracteres ou mais.");return}
+  if(a!==$("#ap2").value){alert("As senhas digitadas não são iguais.");return}
+  const {data,error}=await db.auth.updateUser({password:a});
+  if(error){alert("Não foi possível alterar a senha: "+error.message);return}
+  history.replaceState(null,"",base());uid=data.user.id;await load();tab="produtos";draw();alert("Senha alterada com sucesso!");
+}
+async function sair(){if(!confirm("Sair da conta?"))return;await db.auth.signOut();uid=null;D=novo();modo="entrar";draw()}
+
+/* CATÁLOGO DO CLIENTE */
+function vCat(){
+  const ds=D.produtos.filter(p=>!gf||p.categoria_id===gf);
+  const n=Object.keys(cart).reduce((a,k)=>a+cart[k],0);
+  const ids=[...new Set(D.produtos.map(p=>p.categoria_id).filter(Boolean))];
+  const b=(i,l)=>`<button class="chip ${gf===i?"on":""}" data-g="${i}" onclick="gf=this.dataset.g;draw()">${esc(l)}</button>`;
+  let h=ids.length?`<div class="chips">${b("","Todos")}${ids.map(i=>b(i,catNome(i))).join("")}</div>`:"";
+  h+=ds.length?`<div class="grid">${ds.map(p=>`<div class="p">${img(p)}<div class="i"><b>${esc(p.nome)}</b><small>${esc(p.descricao)}</small><span class="price">${money(p.preco)}</span><small>${p.estoque} em estoque</small><button class="btn" onclick="add('${p.id}')">Adicionar</button></div></div>`).join("")}</div>`:`<div class="empty">Nenhum produto disponível no momento.</div>`;
+  if(n)h+=`<div class="cart"><button class="btn" onclick="enviar()">Enviar pedido no WhatsApp (${n} ${n>1?"itens":"item"})</button></div>`;
+  return h;
+}
+function add(id){const p=D.produtos.find(x=>x.id===id);if((cart[id]||0)<p.estoque)cart[id]=(cart[id]||0)+1;draw()}
+function enviar(){
+  const num=(D.loja.whatsapp||"").replace(/\D/g,"");
+  if(!num){alert("O lojista ainda não configurou o WhatsApp.");return}
+  let tot=0;const l=Object.keys(cart).map(id=>{const p=D.produtos.find(x=>x.id===id),s=p.preco*cart[id];tot+=s;return "• "+cart[id]+"x "+p.nome+" – "+money(s)});
+  window.open("https://wa.me/"+(num.length<=11?"55"+num:num)+"?text="+encodeURIComponent("Olá! Gostaria de fazer este pedido:\n"+l.join("\n")+"\nTotal: "+money(tot)),"_blank");
+  cart={};draw();
+}
+
+/* PRODUTOS */
+function vProd(){
+  const e=edit?D.produtos.find(p=>p.id===edit):null;
+  return `<div class="card"><h2>${e?"Editando: "+esc(e.nome):"Novo produto"}</h2>
+  <label>Foto</label><div class="row"><button class="btn" onclick="tirarFoto()">📸 Tirar foto agora</button><button class="btn sec" onclick="$('#gal').click()">🖼️ Escolher da galeria</button></div>
+  <input id="cam" type="file" accept="image/*" capture="environment" hidden onchange="lerFoto(this)"><input id="gal" type="file" accept="image/*" hidden onchange="lerFoto(this)">
+  <div id="prev">${e&&e.foto_url?prev(esc(e.foto_url)):""}</div>
+  <label>Nome</label><input id="fn" value="${esc(e&&e.nome)}">
+  <label>Grupo / categoria (ex.: Natura, Boticário)</label><input id="fg" list="gl" placeholder="Escolha um grupo ou digite um novo" value="${esc(e&&catNome(e.categoria_id))}"><datalist id="gl">${D.categorias.map(c=>`<option value="${esc(c.nome)}">`).join("")}</datalist>
+  <div class="row"><div><label>Preço (R$)</label><input id="fp" type="number" step="0.01" min="0" value="${e?e.preco:""}"></div><div><label>Estoque</label><input id="fe" type="number" min="0" value="${e?e.estoque:""}"></div></div>
+  <label>Descrição</label><textarea id="fd" rows="3">${esc(e&&e.descricao)}</textarea>
+  <div class="row" style="margin-top:12px"><button id="sv" class="btn" onclick="salvarP()">${e?"Salvar alterações":"Adicionar produto"}</button>${e?`<button class="btn sec" onclick="edit=null;blob=null;draw()">Cancelar</button>`:""}</div></div>
+  <div class="card"><h2>Meus produtos (${D.produtos.length})</h2>${D.produtos.length?D.produtos.map(p=>`<div class="it">${img(p)}<div class="t"><b>${esc(p.nome)}</b><small>${catNome(p.categoria_id)?esc(catNome(p.categoria_id))+" · ":""}${money(p.preco)} · <span class="${p.estoque<=2?"low":""}">${p.estoque} em estoque</span></small></div><button class="btn sec" onclick="edit='${p.id}';blob=null;draw();scrollTo(0,0)">Editar</button><button class="btn sec" onclick="delP('${p.id}')">🗑️</button></div>`).join(""):`<div class="empty">Nenhum produto ainda. Adicione o primeiro acima.</div>`}</div>`;
+}
+function reduzir(f,max,tipo,cb){
+  const r=new FileReader();
+  r.onload=()=>{const i=new Image();i.onload=()=>{const k=Math.min(1,max/Math.max(i.width,i.height)),c=document.createElement("canvas");c.width=i.width*k;c.height=i.height*k;c.getContext("2d").drawImage(i,0,0,c.width,c.height);c.toBlob(cb,tipo,.75)};i.src=r.result};
+  r.readAsDataURL(f);
+}
+async function tirarFoto(){
+  const C=window.Capacitor,cam=C&&C.isNativePlatform&&C.isNativePlatform()&&C.Plugins&&C.Plugins.Camera;
+  if(!cam){$("#cam").click();return}
+  try{
+    const r=await cam.getPhoto({quality:80,resultType:"dataUrl",source:"CAMERA",width:1000});
+    const b=await (await fetch(r.dataUrl)).blob();
+    reduzir(b,700,"image/jpeg",x=>{blob=x;$("#prev").innerHTML=prev(URL.createObjectURL(x))});
+  }catch(e){}
+}
+function lerFoto(el){const f=el.files[0];if(!f)return;reduzir(f,700,"image/jpeg",b=>{blob=b;$("#prev").innerHTML=prev(URL.createObjectURL(b))})}
+async function up(b,ext){
+  const path=uid+"/"+Date.now()+"."+ext;
+  const {error}=await db.storage.from("fotos").upload(path,b,{contentType:b.type});
+  if(error){alert("Erro ao enviar a imagem: "+error.message);return null}
+  return db.storage.from("fotos").getPublicUrl(path).data.publicUrl;
+}
+async function salvarP(){
+  const nome=$("#fn").value.trim(),preco=parseFloat($("#fp").value),est=parseInt($("#fe").value||"0");
+  if(!nome||isNaN(preco)){alert("Informe pelo menos o nome e o preço.");return}
+  const bt=$("#sv");bt.disabled=true;bt.textContent="Salvando...";
+  const fim=()=>{bt.disabled=false;bt.textContent="Salvar"};
+  let cid=null;const gn=$("#fg").value.trim();
+  if(gn){let c=D.categorias.find(x=>x.nome.toLowerCase()===gn.toLowerCase());
+    if(!c){c=await q(db.from("categorias").insert({nome:gn}).select().single());if(!c){fim();return}}
+    cid=c.id}
+  const d={nome,preco,estoque:est,descricao:$("#fd").value.trim(),categoria_id:cid};
+  if(blob){const u=await up(blob,"jpg");if(u)d.foto_url=u}
+  const r=await q(edit?db.from("produtos").update(d).eq("id",edit):db.from("produtos").insert(d));
+  if(!r){fim();return}
+  edit=null;blob=null;await load();draw();
+}
+async function delP(id){
+  const p=D.produtos.find(x=>x.id===id);
+  if(!confirm('Excluir o produto "'+p.nome+'"?\n\nEssa ação não pode ser desfeita.'))return;
+  if(await q(db.from("produtos").delete().eq("id",id))){await load();draw()}
+}
+
+/* VENDAS */
+function vVen(){
+  const ok=D.vendas.filter(v=>!v.cancelada),tot=ok.reduce((a,v)=>a+Number(v.total),0);
+  const baixo=D.produtos.filter(p=>p.estoque<=2).length;
+  return `<div class="stats"><div class="stat"><span>Total vendido</span><b>${money(tot)}</b></div><div class="stat"><span>Vendas</span><b>${ok.length}</b></div><div class="stat"><span>Estoque baixo</span><b>${baixo}</b></div></div>
+  <div class="card"><h2>Registrar venda</h2>
+  <label>Produto</label><select id="vp">${D.produtos.filter(p=>p.estoque>0).map(p=>`<option value="${p.id}">${esc(p.nome)} – ${money(p.preco)} (${p.estoque})</option>`).join("")||"<option value=''>Sem produtos em estoque</option>"}</select>
+  <div class="row"><div><label>Quantidade</label><input id="vq" type="number" min="1" value="1"></div><div><label>Cliente</label><select id="vc"><option value="">Cliente avulso</option>${D.clientes.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join("")}</select></div></div>
+  <div style="margin-top:12px"><button class="btn" onclick="vender()">Registrar venda</button></div></div>
+  <div class="card"><h2>Histórico</h2>${D.vendas.length?[...D.vendas].reverse().map(v=>`<div class="it"><div class="t"><b>${v.qtd}x ${esc(v.produto_nome)}</b><small>${esc(v.cliente_nome||"Cliente avulso")} · ${new Date(v.criado_em).toLocaleDateString("pt-BR")}</small></div><div style="text-align:right"><b ${v.cancelada?'style="text-decoration:line-through;opacity:.5"':""}>${money(v.total)}</b>${v.cancelada?`<small class="low" style="display:block">cancelada</small>`:`<br><button class="btn sec" style="padding:4px 8px;font-size:.75rem" onclick="cancelar('${v.id}')">Cancelar</button>`}</div></div>`).join(""):`<div class="empty">Nenhuma venda registrada.</div>`}</div>`;
+}
+async function vender(){
+  const p=D.produtos.find(x=>x.id===$("#vp").value),n=parseInt($("#vq").value),c=D.clientes.find(x=>x.id===$("#vc").value);
+  if(!p||!n||n<1)return;
+  if(n>p.estoque){alert("Estoque insuficiente.");return}
+  if(!confirm("Registrar esta venda?\n\n"+n+"x "+p.nome+"\nCliente: "+(c?c.nome:"Cliente avulso")+"\nTotal: "+money(p.preco*n)))return;
+  if(!await q(db.from("vendas").insert({produto_id:p.id,produto_nome:p.nome,qtd:n,total:p.preco*n,cliente_id:c?c.id:null,cliente_nome:c?c.nome:""})))return;
+  await q(db.from("produtos").update({estoque:p.estoque-n}).eq("id",p.id));
+  await load();draw();
+}
+async function cancelar(id){
+  const v=D.vendas.find(x=>x.id===id);if(!v||!confirm("Cancelar esta venda e devolver ao estoque?"))return;
+  if(!await q(db.from("vendas").update({cancelada:true}).eq("id",id)))return;
+  const p=D.produtos.find(x=>x.id===v.produto_id);
+  if(p)await q(db.from("produtos").update({estoque:p.estoque+v.qtd}).eq("id",p.id));
+  await load();draw();
+}
+
+/* CLIENTES */
+function stC(c){
+  const vs=D.vendas.filter(v=>v.cliente_id===c.id&&!v.cancelada),n=vs.length;
+  const tot=vs.reduce((a,v)=>a+Number(v.total),0),qt=vs.reduce((a,v)=>a+v.qtd,0);
+  const t=vs.map(v=>new Date(v.criado_em).getTime()),ult=n?t[n-1]:0,iv=n>1?Math.round((ult-t[0])/(n-1)/864e5):0;
+  return {vs,n,tot,qt,ult,iv};
+}
+function freq(s){
+  if(!s.n)return "Ainda não comprou";
+  const a=Math.floor((Date.now()-s.ult)/864e5);
+  return (s.iv>=1?"Compra a cada ~"+s.iv+(s.iv===1?" dia":" dias")+" · ":"")+(a===0?"última compra hoje":"última compra há "+a+(a===1?" dia":" dias"));
+}
+function vCli(){
+  const e=ec?D.clientes.find(c=>c.id===ec):null;
+  const L=D.clientes.map(c=>({c,s:stC(c)})).sort((a,b)=>b.s.tot-a.s.tot);
+  const at=L.filter(x=>x.s.n&&Date.now()-x.s.ult<30*864e5).length;
+  return `<div class="stats"><div class="stat"><span>Clientes</span><b>${L.length}</b></div><div class="stat"><span>Ativos (30 dias)</span><b>${at}</b></div><div class="stat"><span>Melhor cliente</span><b style="font-size:1rem">${L.length&&L[0].s.tot?esc(L[0].c.nome):"—"}</b></div></div>
+  <div class="card"><h2>${e?"Editando: "+esc(e.nome):"Novo cliente"}</h2>
+  <label>Nome</label><input id="kn" value="${esc(e&&e.nome)}">
+  <label>Telefone / WhatsApp</label><input id="kt" inputmode="tel" value="${esc(e&&e.telefone)}">
+  <label>Endereço</label><input id="ke" value="${esc(e&&e.endereco)}">
+  <div class="row" style="margin-top:12px"><button class="btn" onclick="salvarCli()">${e?"Salvar alterações":"Adicionar cliente"}</button>${e?`<button class="btn sec" onclick="ec=null;draw()">Cancelar</button>`:""}</div></div>
+  <div class="card"><h2>Meus clientes</h2>${L.length?L.map(({c,s})=>`<div class="cl"><b>${esc(c.nome)}</b><small style="display:block;color:var(--mut)">${esc(c.telefone)}${c.endereco?" · "+esc(c.endereco):""}</small>
+  <div class="m"><span>Compras: <b>${s.n}</b></span><span>Gasto: <b>${money(s.tot)}</b></span><span>Produtos: <b>${s.qt}</b></span></div>
+  <small style="display:block;color:var(--mut)">${freq(s)}</small>
+  <div class="row" style="margin-top:8px"><button class="btn sec" onclick="aberto=aberto==='${c.id}'?null:'${c.id}';draw()">Ver compras</button><button class="btn sec" onclick="zapCli('${c.id}')">WhatsApp</button><button class="btn sec" onclick="ec='${c.id}';draw();scrollTo(0,0)">✏️ Editar</button><button class="btn sec" onclick="delCli('${c.id}')">🗑️ Excluir</button></div>
+  ${aberto===c.id?'<div class="tip">'+(s.vs.length?[...s.vs].reverse().map(v=>v.qtd+"x "+esc(v.produto_nome)+" – "+money(v.total)+" · "+new Date(v.criado_em).toLocaleDateString("pt-BR")).join("<br>"):"Nenhuma compra registrada.")+"</div>":""}</div>`).join(""):`<div class="empty">Nenhum cliente cadastrado.</div>`}</div>`;
+}
+async function salvarCli(){
+  const nome=$("#kn").value.trim();if(!nome){alert("Informe o nome do cliente.");return}
+  const d={nome,telefone:$("#kt").value.trim(),endereco:$("#ke").value.trim()};
+  if(!await q(ec?db.from("clientes").update(d).eq("id",ec):db.from("clientes").insert(d)))return;
+  ec=null;await load();draw();
+}
+async function delCli(id){
+  const c=D.clientes.find(x=>x.id===id);
+  if(!confirm('Excluir o cliente "'+c.nome+'"?\n\nEssa ação não pode ser desfeita. As vendas já registradas continuam no histórico de vendas.'))return;
+  if(await q(db.from("clientes").delete().eq("id",id))){if(ec===id)ec=null;await load();draw()}
+}
+function zapCli(id){const c=D.clientes.find(x=>x.id===id),t=(c.telefone||"").replace(/\D/g,"");if(!t){alert("Cliente sem telefone.");return}window.open("https://wa.me/"+(t.length<=11?"55"+t:t),"_blank")}
+
+/* AJUSTES */
+function vCfg(){
+  const L=D.loja,link=base()+"?loja="+L.slug;
+  return `<div class="card"><h2>Dados da loja</h2>
+  <label>Logo da loja</label><div id="lp">${L.logo_url?`<img src="${esc(L.logo_url)}" class="lg" style="display:block;margin:8px 0;border-color:var(--bd)" alt="Logo">`:""}</div>
+  <div class="row"><button class="btn sec" onclick="$('#lgf').click()">🖼️ Escolher logo</button><button class="btn sec" onclick="rmLogo()">Remover logo</button></div>
+  <input id="lgf" type="file" accept="image/*" hidden onchange="lerLogo(this)">
+  <label>Nome da loja</label><input id="cn" value="${esc(L.nome)}">
+  <label>Seu WhatsApp (com DDD, ex: 91999998888)</label><input id="cz" inputmode="tel" value="${esc(L.whatsapp)}">
+  <div style="margin-top:12px"><button class="btn" onclick="salvarC()">Salvar</button></div></div>
+  <div class="card"><h2>Link do catálogo para o cliente</h2><input readonly value="${esc(link)}" onclick="this.select()">
+  <div class="row" style="margin-top:10px"><button class="btn" onclick="copiar()">Copiar link</button><a class="btn sec" style="text-align:center;text-decoration:none" href="${esc(link)}" target="_blank">Ver como cliente</a></div></div>
+  <div class="card"><b>Conta:</b> <small>entrada com o e-mail cadastrado.</small><div style="margin-top:10px"><button class="btn sec" onclick="sair()">Sair da conta</button></div></div>`;
+}
+async function salvarC(){
+  const d={nome:$("#cn").value.trim()||"Minha Loja",whatsapp:$("#cz").value.trim()};
+  if(await q(db.from("lojas").update(d).eq("id",uid))){await load();draw();alert("Salvo!")}
+}
+function lerLogo(el){
+  const f=el.files[0];if(!f)return;
+  reduzir(f,300,"image/png",async b=>{
+    const u=await up(b,"png");if(!u)return;
+    if(await q(db.from("lojas").update({logo_url:u}).eq("id",uid))){D.loja.logo_url=u;draw()}
+  });
+}
+async function rmLogo(){
+  if(!D.loja.logo_url||!confirm("Remover a logo da loja?"))return;
+  if(await q(db.from("lojas").update({logo_url:null}).eq("id",uid))){D.loja.logo_url=null;draw()}
+}
+function copiar(){const l=base()+"?loja="+D.loja.slug;try{navigator.clipboard.writeText(l);alert("Link copiado!")}catch(e){alert("Copie manualmente o link do campo.")}}
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.closest&&e.target.closest("#auth")){e.preventDefault();const b=$("#abtn");if(b)b.click()}});
+db.auth.onAuthStateChange(ev=>{if(ev==="PASSWORD_RECOVERY"){modo="nova";uid=null;draw()}});
+init();
+</script>
+</body>
+</html>
