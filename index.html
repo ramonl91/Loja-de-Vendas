@@ -509,11 +509,36 @@ function cobrar(k){
 }
 const stCli=id=>{const ps=D.parcelas.filter(x=>x.cliente_id===id&&!x.paga&&ativa(x.venda_id));if(!ps.length)return "";return ps.some(x=>x.vencimento<hoje())?"atrasado":"debito"};
 const tagCli=id=>{const s=stCli(id);return s?` <span class="tag ${s}">${s==="atrasado"?"ATRASADO":"EM DÉBITO"}</span>`:""};
+function enviarCat(){
+  const link=base()+"?loja="+D.loja.slug,loja=D.loja.nome||"minha loja";
+  const m=document.createElement("div");
+  m.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto";
+  const comTel=D.clientes.filter(c=>(c.telefone||"").replace(/\D/g,""));
+  m.innerHTML=`<div class="card" style="width:100%;max-width:380px;margin:0"><h2>Enviar catálogo</h2>
+  <label>Cliente cadastrado</label><select id="wc"><option value="">Escolher o contato no WhatsApp</option>${comTel.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join("")}</select>
+  <label>Ou digite o número (com DDD)</label><input id="wn" inputmode="tel" placeholder="91999998888">
+  <label>Mensagem</label><textarea id="wm" rows="4"></textarea>
+  <div class="row" style="margin-top:12px"><button class="btn sec" id="wx" style="min-width:0">Fechar</button><button class="btn" id="wo" style="min-width:0">Abrir WhatsApp</button></div>
+  <div style="margin-top:8px"><button class="btn sec" style="width:100%" id="wl">Copiar link</button></div></div>`;
+  document.body.appendChild(m);
+  const Q=x=>m.querySelector(x);let editada=false;
+  const msg=n=>"Olá"+(n?", "+n:"")+"! Conheça o catálogo da "+loja+", com os produtos disponíveis: "+link;
+  Q("#wm").value=msg("");Q("#wm").oninput=()=>{editada=true};
+  Q("#wc").onchange=()=>{const c=D.clientes.find(x=>x.id===Q("#wc").value);if(c&&!editada)Q("#wm").value=msg(c.nome.split(" ")[0]);if(c)Q("#wn").value=""};
+  Q("#wx").onclick=()=>m.remove();
+  Q("#wl").onclick=()=>{try{navigator.clipboard.writeText(link);alert("Link copiado!")}catch(e){alert(link)}};
+  Q("#wo").onclick=()=>{
+    const c=D.clientes.find(x=>x.id===Q("#wc").value);
+    const t=((c&&c.telefone)||Q("#wn").value).replace(/\D/g,"");
+    window.open("https://wa.me/"+(t?(t.length<=11?"55"+t:t):"")+"?text="+encodeURIComponent(Q("#wm").value),"_blank");
+    m.remove();
+  };
+}
 function vHome(){
   const baixo=D.produtos.filter(p=>p.estoque<=2).length,devendo=D.clientes.filter(c=>stCli(c.id)).length,atras=D.clientes.filter(c=>stCli(c.id)==="atrasado").length;
   const pAtr=D.parcelas.filter(x=>!x.paga&&ativa(x.venda_id)&&x.vencimento<hoje()).length;
   const it=[["produtos","📦","Produtos",baixo?baixo+" com estoque baixo":"",""],["vendas","🛒","Vendas","",""],["fin","💵","Financeiro",pAtr?pAtr+" parcela"+(pAtr>1?"s":"")+" atrasada"+(pAtr>1?"s":""):"",pAtr?"r":""],["clientes","👥","Clientes",devendo?devendo+" em débito"+(atras?" ("+atras+" atrasado"+(atras>1?"s":"")+")":""):"",atras?"r":""],["config","⚙️","Ajustes","",""]];
-  return `${D.loja&&D.loja.logo_url?"":`<div class="tip" style="margin:0 0 12px">Dica: em Ajustes você pode colocar a logo da sua loja.</div>`}<div class="hgrid">${it.map(([k,e,l,b,r])=>`<button class="hcard" onclick="tab='${k}';draw()"><span class="he">${e}</span><b>${l}</b>${b?`<small class="hb ${r}">${b}</small>`:""}</button>`).join("")}</div>`;
+  return `${D.loja&&D.loja.logo_url?"":`<div class="tip" style="margin:0 0 12px">Dica: em Ajustes você pode colocar a logo da sua loja.</div>`}<div class="hgrid"><button class="hcard" style="grid-column:1/-1;min-height:80px;flex-direction:row;gap:12px;background:var(--pri);border-color:var(--pri);color:var(--on,#fff)" onclick="enviarCat()"><span class="he" style="font-size:1.8rem">📲</span><b>Enviar catálogo no WhatsApp</b></button>${it.map(([k,e,l,b,r])=>`<button class="hcard" onclick="tab='${k}';draw()"><span class="he">${e}</span><b>${l}</b>${b?`<small class="hb ${r}">${b}</small>`:""}</button>`).join("")}</div>`;
 }
 const aRec=id=>{const ps=D.parcelas.filter(x=>x.cliente_id===id&&!x.paga&&ativa(x.venda_id));if(!ps.length)return "";return `<small style="display:block;color:var(--pri)">A receber: <b>${money(soma(ps))}</b> · faltam ${ps.length} parcela${ps.length>1?"s":""}</small>`};
 
