@@ -233,57 +233,166 @@ function cortar(file,logo){
     fr.readAsDataURL(file);
   });
 }
-function branco(c,S,tol){
-  const im=c.getImageData(0,0,S,S),d=im.data;let r=0,g=0,b=0,n=0;
-  for(const [x0,y0] of [[0,0],[S-6,0],[0,S-6],[S-6,S-6]])for(let y=y0;y<y0+6;y++)for(let x=x0;x<x0+6;x++){const i=(y*S+x)*4;r+=d[i];g+=d[i+1];b+=d[i+2];n++}
-  r/=n;g/=n;b/=n;
-  const seen=new Uint8Array(S*S),st=new Int32Array(S*S);let sp=0;
-  const T=tol*tol,ok=p=>{const i=p*4,a=d[i]-r,e=d[i+1]-g,f=d[i+2]-b;return a*a+e*e+f*f<T};
-  const push=p=>{if(!seen[p]&&ok(p)){seen[p]=1;st[sp++]=p}};
-  for(let i=0;i<S;i++){push(i);push((S-1)*S+i);push(i*S);push(i*S+S-1)}
-  while(sp){const p=st[--sp],x=p%S,y=(p-x)/S;if(x>0)push(p-1);if(x<S-1)push(p+1);if(y>0)push(p-S);if(y<S-1)push(p+S)}
-  for(let p=0;p<S*S;p++)if(seen[p]){const i=p*4;d[i]=d[i+1]=d[i+2]=255;d[i+3]=255}
-  c.putImageData(im,0,0);
+/* Limpa o fundo: parte das bordas da foto e avança só por áreas lisas, parando onde há contorno forte */
+function limparFundo(c,sens,taps){
+  const W=c.width,H=c.height,N=W*H,cx=c.getContext("2d"),im=cx.getImageData(0,0,W,H),d=im.data;
+  const b=new Float32Array(N*3),L=new Float32Array(N),G=new Float32Array(N);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    let r=0,g=0,bl=0,n=0;
+    for(let j=-1;j<=1;j++){const yy=y+j;if(yy<0||yy>=H)continue;for(let i=-1;i<=1;i++){const xx=x+i;if(xx<0||xx>=W)continue;const k=(yy*W+xx)*4;r+=d[k];g+=d[k+1];bl+=d[k+2];n++}}
+    const p=y*W+x;b[p*3]=r/n;b[p*3+1]=g/n;b[p*3+2]=bl/n;L[p]=.299*b[p*3]+.587*b[p*3+1]+.114*b[p*3+2];
+  }
+  for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const p=y*W+x;
+    const gx=L[p-W+1]+2*L[p+1]+L[p+W+1]-L[p-W-1]-2*L[p-1]-L[p+W-1];
+    const gy=L[p+W-1]+2*L[p+W]+L[p+W+1]-L[p-W-1]-2*L[p-W]-L[p-W+1];
+    G[p]=Math.sqrt(gx*gx+gy*gy)}
+  const Te=8+sens*.9,Ts=8+sens*.3,Tg=40+sens;
+  const dist=(p,q)=>{const a=b[p*3]-b[q*3],e=b[p*3+1]-b[q*3+1],f=b[p*3+2]-b[q*3+2];return Math.sqrt(a*a+e*e+f*f)};
+  const dref=(p,R)=>{const a=b[p*3]-R[0],e=b[p*3+1]-R[1],f=b[p*3+2]-R[2];return Math.sqrt(a*a+e*e+f*f)};
+  const rw=Math.max(2,Math.round(Math.min(W,H)*.02)),borda=[],hist=new Map();
+  const bin=p=>((b[p*3]>>4)<<8)|((b[p*3+1]>>4)<<4)|(b[p*3+2]>>4);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(x<rw||y<rw||x>=W-rw||y>=H-rw)borda.push(y*W+x);
+  for(const p of borda){const k=bin(p);hist.set(k,(hist.get(k)||0)+1)}
+  let best=-1,bc=0;for(const [k,v] of hist)if(v>bc){bc=v;best=k}
+  const R=[0,0,0];let nb=0;
+  for(const p of borda)if(bin(p)===best){R[0]+=b[p*3];R[1]+=b[p*3+1];R[2]+=b[p*3+2];nb++}
+  R[0]/=nb;R[1]/=nb;R[2]/=nb;
+  const bg=new Uint8Array(N),st=new Int32Array(N);let sp=0;
+  const grow=ok=>{while(sp){const p=st[--sp],x=p%W,y=(p-x)/W;
+    if(x>0)t(p-1,p,ok);if(x<W-1)t(p+1,p,ok);if(y>0)t(p-W,p,ok);if(y<H-1)t(p+W,p,ok)}};
+  const t=(q,p,ok)=>{if(!bg[q]&&ok(q,p)){bg[q]=1;st[sp++]=q}};
+  for(const p of borda)if(!bg[p]&&G[p]<Te&&dref(p,R)<Tg){bg[p]=1;st[sp++]=p}
+  grow((q,p)=>G[q]<Te&&dist(q,p)<Ts&&dref(q,R)<Tg*1.5);
+  /* remove manchas soltas que sobraram fora do produto */
+  const lab=new Int32Array(N),sizes=[0];let nl=0;
+  for(let s0=0;s0<N;s0++){
+    if(bg[s0]||lab[s0])continue;
+    nl++;let cnt=0;sp=0;st[sp++]=s0;lab[s0]=nl;
+    while(sp){const p=st[--sp];cnt++;const x=p%W,y=(p-x)/W;
+      if(x>0&&!bg[p-1]&&!lab[p-1]){lab[p-1]=nl;st[sp++]=p-1}
+      if(x<W-1&&!bg[p+1]&&!lab[p+1]){lab[p+1]=nl;st[sp++]=p+1}
+      if(y>0&&!bg[p-W]&&!lab[p-W]){lab[p-W]=nl;st[sp++]=p-W}
+      if(y<H-1&&!bg[p+W]&&!lab[p+W]){lab[p+W]=nl;st[sp++]=p+W}}
+    sizes.push(cnt);
+  }
+  const mx=sizes.reduce((a,v)=>Math.max(a,v),0);
+  for(let p=0;p<N;p++)if(!bg[p]&&sizes[lab[p]]<Math.max(.004*N,.05*mx))bg[p]=1;
+  /* toques do usuário */
+  for(const [nx,ny] of taps||[]){
+    const x0=Math.min(W-1,Math.max(0,Math.round(nx*W))),y0=Math.min(H-1,Math.max(0,Math.round(ny*H))),s=y0*W+x0;
+    if(bg[s])continue;
+    const T=[b[s*3],b[s*3+1],b[s*3+2]];bg[s]=1;sp=0;st[sp++]=s;
+    grow((q,p)=>G[q]<Te*1.4&&(dref(q,T)<Tg*.6||dist(q,p)<Ts));
+  }
+  const edge=[];
+  for(let p=0;p<N;p++){if(bg[p])continue;const x=p%W,y=(p-x)/W;if((x>0&&bg[p-1])||(x<W-1&&bg[p+1])||(y>0&&bg[p-W])||(y<H-1&&bg[p+W]))edge.push(p)}
+  let tot=0;
+  for(let p=0;p<N;p++)if(bg[p]){tot++;const k=p*4;d[k]=d[k+1]=d[k+2]=255;d[k+3]=255}
+  for(const p of edge){const k=p*4;d[k]=(d[k]+255)>>1;d[k+1]=(d[k+1]+255)>>1;d[k+2]=(d[k+2]+255)>>1}
+  cx.putImageData(im,0,0);
+  return tot/N;
 }
 function abrirCorte(im,logo,res){
-  const S=320,W=im.naturalWidth,H=im.naturalHeight,cover=Math.max(S/W,S/H),fit=Math.min(S/W,S/H);
-  let sc=cover,ox=(S-W*sc)/2,oy=(S-H*sc)/2;
-  const m=document.createElement("div");m.id="mc";
-  m.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto";
-  m.innerHTML=`<div class="card" style="width:100%;max-width:380px;margin:0"><h2>Ajustar ${logo?"logo":"foto"}</h2>
-  <canvas id="mcv" width="${S}" height="${S}" style="width:100%;aspect-ratio:1;touch-action:none;border:1px solid var(--bd);background:#fff;cursor:grab;${logo?"border-radius:50%":"border-radius:12px"}"></canvas>
-  <small style="color:var(--mut)">Arraste a imagem para enquadrar e use o zoom.</small>
-  <label>Zoom</label><input id="mz" type="range" min="${fit*0.5}" max="${cover*4}" step="0.005" value="${sc}">
-  <label style="display:flex;gap:8px;align-items:center;color:var(--tx)"><input id="mf" type="checkbox" style="width:auto"> Deixar o fundo branco</label>
-  <div id="mfw" hidden><label>Intensidade da limpeza do fundo</label><input id="mi" type="range" min="15" max="120" value="45"><small style="color:var(--mut)">Funciona melhor com fundo liso e foto que preenche o quadro.</small></div>
-  <div class="row" style="margin-top:12px"><button class="btn sec" id="mx">Cancelar</button><button class="btn" id="mo">Usar foto</button></div></div>`;
+  const src=document.createElement("canvas"),k0=Math.min(1,1600/Math.max(im.naturalWidth,im.naturalHeight));
+  src.width=Math.round(im.naturalWidth*k0);src.height=Math.round(im.naturalHeight*k0);src.getContext("2d").drawImage(im,0,0,src.width,src.height);
+  let quad=true,fundo=false,sens=50,taps=[],ds,dw,dh,cr;
+  const m=document.createElement("div");
+  m.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto";
   document.body.appendChild(m);
-  const cv=$("#mcv"),cx=cv.getContext("2d",{willReadFrequently:true});
-  const pinta=(c,k)=>{
-    const f=$("#mf").checked;c.clearRect(0,0,S*k,S*k);
-    if(!logo||f){c.fillStyle="#fff";c.fillRect(0,0,S*k,S*k)}
-    c.drawImage(im,ox*k,oy*k,W*sc*k,H*sc*k);
-    if(f)branco(c,S*k,+$("#mi").value);
-  };
-  let t=0;const sched=()=>{if(t)return;t=requestAnimationFrame(()=>{t=0;pinta(cx,1)})};
-  pinta(cx,1);
-  let dr=null;
-  cv.onpointerdown=e=>{dr={x:e.clientX,y:e.clientY,ox,oy};cv.setPointerCapture(e.pointerId)};
-  cv.onpointermove=e=>{if(!dr)return;const k=S/cv.clientWidth;ox=dr.ox+(e.clientX-dr.x)*k;oy=dr.oy+(e.clientY-dr.y)*k;sched()};
-  cv.onpointerup=cv.onpointercancel=()=>{dr=null};
-  $("#mz").oninput=e=>{const n=+e.target.value,a=(S/2-ox)/sc,b=(S/2-oy)/sc;sc=n;ox=S/2-a*sc;oy=S/2-b*sc;sched()};
-  $("#mf").onchange=()=>{$("#mfw").hidden=!$("#mf").checked;sched()};
-  $("#mi").oninput=sched;
-  $("#mx").onclick=()=>{m.remove();res(null)};
-  $("#mo").onclick=()=>{
-    const OUT=logo?400:800,o=document.createElement("canvas");o.width=o.height=OUT;
-    const oc=o.getContext("2d",{willReadFrequently:true});
-    const f=$("#mf").checked;
-    if(!logo||f){oc.fillStyle="#fff";oc.fillRect(0,0,OUT,OUT)}
-    const q2=OUT/S;oc.drawImage(im,ox*q2,oy*q2,W*sc*q2,H*sc*q2);
-    if(f)branco(oc,OUT,+$("#mi").value*1);
-    o.toBlob(b=>{m.remove();res(b)},logo?"image/png":"image/jpeg",.85);
-  };
+  const Q=s=>m.querySelector(s),sair=v=>{m.remove();res(v)};
+  const lay=()=>{ds=Math.min(330/src.width,360/src.height);dw=Math.round(src.width*ds);dh=Math.round(src.height*ds);
+    const s=Math.min(dw,dh)*.85;cr=quad?{x:(dw-s)/2,y:(dh-s)/2,w:s,h:s}:{x:dw*.075,y:dh*.075,w:dw*.85,h:dh*.85}};
+  lay();
+
+  function tela1(){
+    m.innerHTML=`<div class="card" style="width:100%;max-width:380px;margin:0"><h2>Cortar ${logo?"logo":"foto"}</h2>
+    <canvas id="mcv" style="display:block;margin:auto;max-width:100%;touch-action:none;border-radius:8px"></canvas>
+    <small style="color:var(--mut);display:block;margin-top:6px">Arraste os cantos para cortar e o meio para mover o recorte.</small>
+    <div class="row" style="margin-top:10px"><button class="btn ${quad?"":"sec"}" id="mq" style="min-width:0">Quadrado</button><button class="btn ${quad?"sec":""}" id="ml" style="min-width:0">Livre</button><button class="btn sec" id="mg" style="min-width:0">↺ Girar</button></div>
+    <div class="row" style="margin-top:10px"><button class="btn sec" id="mx" style="min-width:0">Cancelar</button><button class="btn" id="mn" style="min-width:0">Continuar</button></div></div>`;
+    const cv=Q("#mcv");cv.width=dw;cv.height=dh;const c=cv.getContext("2d");
+    const cantos=()=>[[cr.x,cr.y],[cr.x+cr.w,cr.y],[cr.x,cr.y+cr.h],[cr.x+cr.w,cr.y+cr.h]];
+    const pinta=()=>{
+      c.drawImage(src,0,0,dw,dh);c.fillStyle="rgba(0,0,0,.55)";
+      c.fillRect(0,0,dw,cr.y);c.fillRect(0,cr.y+cr.h,dw,dh-cr.y-cr.h);c.fillRect(0,cr.y,cr.x,cr.h);c.fillRect(cr.x+cr.w,cr.y,dw-cr.x-cr.w,cr.h);
+      c.strokeStyle="#fff";c.lineWidth=2;c.strokeRect(cr.x,cr.y,cr.w,cr.h);
+      c.lineWidth=1;c.strokeStyle="rgba(255,255,255,.45)";c.beginPath();
+      for(let i=1;i<3;i++){c.moveTo(cr.x+cr.w*i/3,cr.y);c.lineTo(cr.x+cr.w*i/3,cr.y+cr.h);c.moveTo(cr.x,cr.y+cr.h*i/3);c.lineTo(cr.x+cr.w,cr.y+cr.h*i/3)}
+      c.stroke();c.fillStyle="#fff";c.strokeStyle="#222";
+      for(const [x,y] of cantos()){c.fillRect(x-9,y-9,18,18);c.strokeRect(x-9,y-9,18,18)}
+    };
+    pinta();
+    const pt=e=>{const r=cv.getBoundingClientRect();return [(e.clientX-r.left)*dw/r.width,(e.clientY-r.top)*dh/r.height]};
+    let mod=null;
+    cv.onpointerdown=e=>{
+      const [x,y]=pt(e),cs=cantos();let i=-1,md=36;
+      cs.forEach(([a,b],k)=>{const dd=Math.hypot(a-x,b-y);if(dd<md){md=dd;i=k}});
+      if(i>=0){const [ax,ay]=cs[3-i];mod={t:"r",ax,ay}}
+      else if(x>cr.x&&x<cr.x+cr.w&&y>cr.y&&y<cr.y+cr.h)mod={t:"m",dx:x-cr.x,dy:y-cr.y};
+      if(mod)cv.setPointerCapture(e.pointerId);
+    };
+    cv.onpointermove=e=>{
+      if(!mod)return;let [x,y]=pt(e);
+      if(mod.t==="m"){cr.x=Math.max(0,Math.min(dw-cr.w,x-mod.dx));cr.y=Math.max(0,Math.min(dh-cr.h,y-mod.dy))}
+      else{
+        x=Math.max(0,Math.min(dw,x));y=Math.max(0,Math.min(dh,y));
+        const sx=x>=mod.ax?1:-1,sy=y>=mod.ay?1:-1;let w=Math.abs(x-mod.ax),h=Math.abs(y-mod.ay);
+        if(quad){let s=Math.max(w,h);s=Math.min(s,sx>0?dw-mod.ax:mod.ax,sy>0?dh-mod.ay:mod.ay);w=h=Math.max(s,48)}
+        else{w=Math.max(w,48);h=Math.max(h,48)}
+        cr.x=Math.max(0,Math.min(dw-w,sx>0?mod.ax:mod.ax-w));cr.y=Math.max(0,Math.min(dh-h,sy>0?mod.ay:mod.ay-h));cr.w=w;cr.h=h;
+      }
+      pinta();
+    };
+    cv.onpointerup=cv.onpointercancel=()=>{mod=null};
+    Q("#mq").onclick=()=>{quad=true;const s=Math.min(cr.w,cr.h),cx0=cr.x+cr.w/2,cy0=cr.y+cr.h/2;
+      cr={x:Math.max(0,Math.min(dw-s,cx0-s/2)),y:Math.max(0,Math.min(dh-s,cy0-s/2)),w:s,h:s};tela1()};
+    Q("#ml").onclick=()=>{quad=false;tela1()};
+    Q("#mg").onclick=()=>{
+      const t=document.createElement("canvas");t.width=src.height;t.height=src.width;const tc=t.getContext("2d");
+      tc.translate(t.width/2,t.height/2);tc.rotate(Math.PI/2);tc.drawImage(src,-src.width/2,-src.height/2);
+      src.width=t.width;src.height=t.height;src.getContext("2d").drawImage(t,0,0);lay();taps=[];tela1();
+    };
+    Q("#mx").onclick=()=>sair(null);
+    Q("#mn").onclick=()=>tela2();
+  }
+
+  function tela2(){
+    const sw=cr.w/ds,sh=cr.h/ds,k=Math.min(1,800/Math.max(sw,sh)),cc=document.createElement("canvas");
+    cc.width=Math.max(1,Math.round(sw*k));cc.height=Math.max(1,Math.round(sh*k));
+    cc.getContext("2d").drawImage(src,cr.x/ds,cr.y/ds,sw,sh,0,0,cc.width,cc.height);
+    m.innerHTML=`<div class="card" style="width:100%;max-width:380px;margin:0"><h2>Fundo da ${logo?"logo":"foto"}</h2>
+    <canvas id="mpv" width="330" height="330" style="display:block;margin:auto;max-width:100%;border:1px solid var(--bd);background:#fff;${logo?"border-radius:50%":"border-radius:12px"}"></canvas>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--tx);margin-top:10px"><input id="mf" type="checkbox" style="width:auto" ${fundo?"checked":""}> Deixar o fundo branco</label>
+    <div id="mfw" ${fundo?"":"hidden"}><label>Intensidade da limpeza</label><input id="mi" type="range" min="10" max="100" value="${sens}">
+    <small id="ms" style="display:block;color:var(--mut);margin-top:4px">Se sobrar fundo, toque nele na imagem. Se o produto sumir, diminua a intensidade.</small>
+    <button class="btn sec" id="md" style="margin-top:8px;padding:8px 12px">Desfazer toque</button></div>
+    <div class="row" style="margin-top:12px"><button class="btn sec" id="mv" style="min-width:0">← Voltar</button><button class="btn" id="mo" style="min-width:0">Usar foto</button></div></div>`;
+    const mk=(P,wmax)=>{
+      const k2=Math.min(1,(fundo?500:wmax)/Math.max(cc.width,cc.height)),w=document.createElement("canvas");
+      w.width=Math.max(1,Math.round(cc.width*k2));w.height=Math.max(1,Math.round(cc.height*k2));
+      w.getContext("2d").drawImage(cc,0,0,w.width,w.height);
+      const rr=fundo?limparFundo(w,sens,taps):0,o=document.createElement("canvas");o.width=o.height=P;const oc=o.getContext("2d");
+      if(!logo||fundo){oc.fillStyle="#fff";oc.fillRect(0,0,P,P)}
+      const kk=P/Math.max(w.width,w.height),ww=w.width*kk,hh=w.height*kk;
+      oc.drawImage(w,(P-ww)/2,(P-hh)/2,ww,hh);
+      return [o,rr];
+    };
+    const pv=Q("#mpv"),pc=pv.getContext("2d");let tm=0;
+    const pinta=()=>{const [o,rr]=mk(330,400);pc.clearRect(0,0,330,330);pc.drawImage(o,0,0);Q("#ms").style.color=rr>.96?"var(--warn)":"var(--mut)"};
+    const sched=()=>{if(tm)return;tm=requestAnimationFrame(()=>{tm=0;pinta()})};
+    pinta();
+    pv.onclick=e=>{
+      if(!fundo)return;const r=pv.getBoundingClientRect(),x=(e.clientX-r.left)*330/r.width,y=(e.clientY-r.top)*330/r.height;
+      const kk=330/Math.max(cc.width,cc.height),ww=cc.width*kk,hh=cc.height*kk,nx=(x-(330-ww)/2)/ww,ny=(y-(330-hh)/2)/hh;
+      if(nx<0||nx>1||ny<0||ny>1)return;taps.push([nx,ny]);sched();
+    };
+    Q("#mf").onchange=e=>{fundo=e.target.checked;Q("#mfw").hidden=!fundo;sched()};
+    Q("#mi").oninput=e=>{sens=+e.target.value;sched()};
+    Q("#md").onclick=()=>{taps.pop();sched()};
+    Q("#mv").onclick=()=>{taps=[];tela1()};
+    Q("#mo").onclick=()=>{const [o]=mk(logo?400:800,800);o.toBlob(b=>sair(b),logo?"image/png":"image/jpeg",.88)};
+  }
+  tela1();
 }
 async function up(b,ext){
   const path=uid+"/"+Date.now()+"."+ext;
