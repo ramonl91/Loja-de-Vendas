@@ -80,6 +80,10 @@ let D=novo(),tab="home",uid=null,edit=null,ec=null,aberto=null,fotosEdit=[],rem=
 const SLUG=new URLSearchParams(location.search).get("loja");
 // Depois de publicar na Vercel, coloque aqui o endereço do site entre as aspas. Exemplo: "https://minhaloja.vercel.app/"
 const SITE_URL="";
+// Seu WhatsApp de suporte (com DDD), mostrado quando uma loja é bloqueada. Exemplo: "91999998888"
+const SUPORTE_ZAP="";
+let exige=false;
+async function cargaExige(){try{const {data}=await db.rpc("exige_codigo");exige=data===true}catch(e){exige=false}}
 const base=()=>SITE_URL||location.href.split("?")[0].split("#")[0];
 const catNome=id=>(D.categorias.find(c=>c.id===id)||{}).nome||"";
 const lista=p=>p.fotos&&p.fotos.length?p.fotos:(p.foto_url?[p.foto_url]:[]);
@@ -109,10 +113,12 @@ async function init(){
   if(SLUG){
     const {data:l}=await db.from("lojas").select("*").eq("slug",SLUG).maybeSingle();
     if(!l){$("#app").innerHTML='<div class="empty">Loja não encontrada.</div>';return}
+    if(l.ativa===false){$("#app").innerHTML='<div class="empty">Catálogo indisponível no momento.</div>';return}
     D.loja=l;document.title=l.nome;
     const [p,c]=await Promise.all([db.from("produtos").select("*").eq("loja_id",l.id).gt("estoque",0),db.from("categorias").select("*").eq("loja_id",l.id)]);
     D.produtos=(p.data||[]).sort(porNome);D.categorias=c.data||[];
   }else{
+    await cargaExige();
     const {data:{session}}=await db.auth.getSession();
     const rec=location.hash.includes("type=recovery");
     if(rec)modo="nova";else if(session){uid=session.user.id;await load()}
@@ -124,6 +130,7 @@ async function load(){
   const [l,p,c,k,v,pa]=await Promise.all([t("lojas","id"),t("produtos","loja_id"),t("categorias","loja_id"),t("clientes","loja_id"),t("vendas","loja_id"),t("parcelas","loja_id")]);
   D.loja=(l.data||[])[0]||null;
   if(!D.loja){const r=await db.from("lojas").insert({nome:"Minha Loja",slug:uid.replace(/-/g,"")}).select().single();D.loja=r.data}
+  if(!D.loja){alert("Esta conta não tem uma loja ativa. Fale com o suporte.");await db.auth.signOut();uid=null;D=novo();return}
   D.produtos=(p.data||[]).sort(porNome);D.categorias=(c.data||[]).sort(porNome);D.clientes=(k.data||[]).sort(porNome);
   D.vendas=(v.data||[]).sort((a,b)=>new Date(a.criado_em)-new Date(b.criado_em));
   D.parcelas=pa.data||[];
@@ -137,6 +144,11 @@ function draw(){
   if(SLUG){nv.style.display="none";$("#app").innerHTML=vCat();return}
   if(!uid){nv.style.display="none";$("#app").innerHTML=vAuth();return}
   nv.style.display="none";
+  if(D.loja&&D.loja.ativa===false){
+    const z=(SUPORTE_ZAP||"").replace(/\D/g,"");
+    $("#app").innerHTML=`<div class="card" style="max-width:420px;margin:20px auto;text-align:center"><h2>Acesso suspenso</h2><p style="color:var(--mut)">O acesso desta loja está suspenso. Fale com o suporte para regularizar.</p>${z?`<a class="btn" style="display:block;text-decoration:none" target="_blank" href="https://wa.me/${z.length<=11?"55"+z:z}">Falar com o suporte</a>`:""}<div style="margin-top:10px"><button class="btn sec" onclick="sair()">Sair da conta</button></div></div>`;
+    return;
+  }
   const home=tab==="home";$("#hm").style.display=home?"none":"block";
   if(home)lg.style.width=lg.style.height="104px";
   $("#app").innerHTML=({home:vHome,produtos:vProd,vendas:vVen,fin:vFin,clientes:vCli,config:vCfg})[tab]();
@@ -151,7 +163,7 @@ function vAuth(){
   const acao=c?"criar()":e?"recuperar()":n?"novaSenha()":"entrar()";
   const lnk=(m,t)=>`<a href="#" onclick="modo='${m}';draw();return false" style="color:var(--pri)">${t}</a>`;
   return `<div id="auth" class="card" style="max-width:420px;margin:20px auto"><h2>${tit}</h2>
-  ${c?`<label>Nome da loja</label><input id="an" oninput="sg()"><label>Endereço do catálogo (sem espaços)</label><input id="as" placeholder="ex: natura-maria" oninput="this.dataset.t=1">`:""}
+  ${c?`<label>Nome da loja</label><input id="an" oninput="sg()"><label>Endereço do catálogo (sem espaços)</label><input id="as" placeholder="ex: natura-maria" oninput="this.dataset.t=1">${exige?`<label>Código de ativação</label><input id="ac" placeholder="XXXX-XXXX-XXXX-XXXX" autocapitalize="characters" autocomplete="off">`:""}`:""}
   ${n?"":`<label>E-mail</label><input id="ae" type="email" autocomplete="email">`}
   ${e?`<div class="tip">Enviaremos um link para você criar uma nova senha.</div>`:`<label>${n?"Nova senha":"Senha"} ${c||n?"(mínimo 6 caracteres)":""}</label>${pw("ap",c||n?"new-password":"current-password")}`}
   ${c||n?`<label>Confirmar senha</label>${pw("ap2","new-password")}`:""}
@@ -170,8 +182,15 @@ async function criar(){
   if(senha!==$("#ap2").value){alert("As senhas digitadas não são iguais.");return}
   const {data:ex}=await db.from("lojas").select("id").eq("slug",slug).maybeSingle();
   if(ex){alert("Esse endereço já está em uso. Escolha outro.");return}
-  const {data,error}=await db.auth.signUp({email,password:senha,options:{data:{nome,slug}}});
-  if(error){alert("Não foi possível criar a conta: "+error.message);return}
+  let codigo="";
+  if(exige){
+    codigo=($("#ac")?$("#ac").value:"").trim().toUpperCase();
+    if(!codigo){alert("Digite o código de ativação que você recebeu na compra.");return}
+    const {data:vl}=await db.rpc("codigo_valido",{c:codigo});
+    if(!vl){alert("Código de ativação inválido ou já utilizado.");return}
+  }
+  const {data,error}=await db.auth.signUp({email,password:senha,options:{data:{nome,slug,codigo}}});
+  if(error){alert(/database error/i.test(error.message)?"Não foi possível criar a conta. Confira o código de ativação e o endereço do catálogo.":"Não foi possível criar a conta: "+error.message);return}
   if(!data.session){alert("Conta criada! Confirme o link enviado ao seu e-mail e depois entre.");modo="entrar";draw();return}
   uid=data.user.id;await load();tab="home";draw();
 }
@@ -198,7 +217,7 @@ function vCat(){
   const ids=[...new Set(D.produtos.map(p=>p.categoria_id).filter(Boolean))];
   const b=(i,l)=>`<button class="chip ${gf===i?"on":""}" data-g="${i}" onclick="gf=this.dataset.g;draw()">${esc(l)}</button>`;
   let h=ids.length?`<div class="chips">${b("","Todos")}${ids.map(i=>b(i,catNome(i))).join("")}</div>`:"";
-  h+=ds.length?`<div class="grid">${ds.map(p=>`<div class="p">${galeria(p)}<div class="i"><b>${esc(p.nome)}</b><small>${esc(p.descricao)}</small><span class="price">${money(p.preco)}</span><small>${p.estoque} em estoque</small><button class="btn" onclick="add('${p.id}')">Adicionar</button></div></div>`).join("")}</div>`:`<div class="empty">Nenhum produto disponível no momento.</div>`;
+  h+=ds.length?`<div class="grid">${ds.map(p=>`<div class="p">${galeria(p)}<div class="i"><b>${esc(p.nome)}</b><small>${esc(p.descricao)}</small><span class="price">${money(p.preco)}</span><button class="btn" onclick="add('${p.id}')">Adicionar</button></div></div>`).join("")}</div>`:`<div class="empty">Nenhum produto disponível no momento.</div>`;
   if(n)h+=`<div class="cart"><button class="btn" onclick="enviar()">Enviar pedido no WhatsApp (${n} ${n>1?"itens":"item"})</button></div>`;
   return h;
 }
