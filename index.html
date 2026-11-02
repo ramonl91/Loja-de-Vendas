@@ -75,7 +75,7 @@ const esc=t=>String(t==null?"":t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 const money=n=>Number(n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const slugify=t=>t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
 const q=async p=>{const {data,error}=await p;if(error){alert("Algo deu errado: "+error.message);return null}return data==null?true:data};
-const novo=()=>({produtos:[],categorias:[],clientes:[],vendas:[],parcelas:[],loja:null});
+const novo=()=>({produtos:[],categorias:[],clientes:[],vendas:[],parcelas:[],itens:[],pagamentos:[],loja:null});
 let D=novo(),tab="home",uid=null,edit=null,ec=null,aberto=null,fotosEdit=[],rem=[],gf="",fin="caixa",per="mes",abre=null,cart={},modo="entrar";
 const SLUG=new URLSearchParams(location.search).get("loja");
 // Depois de publicar na Vercel, coloque aqui o endereço do site entre as aspas. Exemplo: "https://minhaloja.vercel.app/"
@@ -127,13 +127,13 @@ async function init(){
 }
 async function load(){
   const t=(n,f)=>db.from(n).select("*").eq(f,uid);
-  const [l,p,c,k,v,pa]=await Promise.all([t("lojas","id"),t("produtos","loja_id"),t("categorias","loja_id"),t("clientes","loja_id"),t("vendas","loja_id"),t("parcelas","loja_id")]);
+  const [l,p,c,k,v,pa,it,pg]=await Promise.all([t("lojas","id"),t("produtos","loja_id"),t("categorias","loja_id"),t("clientes","loja_id"),t("vendas","loja_id"),t("parcelas","loja_id"),t("venda_itens","loja_id"),t("pagamentos","loja_id")]);
   D.loja=(l.data||[])[0]||null;
   if(!D.loja){const r=await db.from("lojas").insert({nome:"Minha Loja",slug:uid.replace(/-/g,"")}).select().single();D.loja=r.data}
   if(!D.loja){alert("Esta conta não tem uma loja ativa. Fale com o suporte.");await db.auth.signOut();uid=null;D=novo();return}
   D.produtos=(p.data||[]).sort(porNome);D.categorias=(c.data||[]).sort(porNome);D.clientes=(k.data||[]).sort(porNome);
   D.vendas=(v.data||[]).sort((a,b)=>new Date(a.criado_em)-new Date(b.criado_em));
-  D.parcelas=pa.data||[];
+  D.parcelas=pa.data||[];D.itens=it.data||[];D.pagamentos=pg.data||[];
 }
 function draw(){
   aplicarTema();
@@ -397,133 +397,242 @@ function plano(total,n,entrada,venc,inter){
   }
   return a;
 }
+let carrinhoV=[];
+const gv=id=>{const e=document.getElementById(id);return e?e.value:""};
+const vLabel=v=>{const it=D.itens.filter(i=>i.venda_id===v.id);return it.length?it.map(i=>i.qtd+"x "+i.produto_nome).join(", "):v.qtd+"x "+v.produto_nome};
+const opcCli=()=>`<option value="">Cliente avulso</option>`+D.clientes.map(c=>{const t=stCli(c.id);return `<option value="${c.id}">${esc(c.nome)}${t?(t==="atrasado"?" ⚠ (atrasado)":" ⚠ (em débito)"):""}</option>`}).join("");
+const disp=p=>p.estoque-carrinhoV.filter(i=>i.pid===p.id).reduce((a,i)=>a+i.qtd,0);
+const totItens=l=>Math.round(l.reduce((s,i)=>s+D.produtos.find(x=>x.id===i.pid).preco*i.qtd,0)*100)/100;
+function modal(html,w){
+  const m=document.createElement("div");
+  m.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto";
+  m.innerHTML='<div class="card" style="width:100%;max-width:'+(w||400)+'px;margin:0">'+html+'</div>';
+  document.body.appendChild(m);return m;
+}
+function itensV(){
+  const l=carrinhoV.map(i=>({...i})),p=D.produtos.find(x=>x.id===gv("vp")),n=parseInt(gv("vq"));
+  if(p&&n>0){const e=l.find(i=>i.pid===p.id);e?e.qtd+=n:l.push({pid:p.id,qtd:n})}
+  return l;
+}
 function vVen(){
   const ok=D.vendas.filter(v=>!v.cancelada),tot=ok.reduce((a,v)=>a+Number(v.total),0);
   const baixo=D.produtos.filter(p=>p.estoque<=2).length;
   return `<div class="stats"><div class="stat"><span>Total vendido</span><b>${money(tot)}</b></div><div class="stat"><span>Vendas</span><b>${ok.length}</b></div><div class="stat"><span>Estoque baixo</span><b>${baixo}</b></div></div>
   <div class="card"><h2>Registrar venda</h2>
-  <label>Produto</label><select id="vp" onchange="selP()"><option value="">Selecione o produto</option>${D.produtos.filter(p=>p.estoque>0).map(p=>`<option value="${p.id}" data-p="${p.preco}">${esc(p.nome)} – ${money(p.preco)} (${p.estoque})</option>`).join("")}</select><div id="vinfo"></div>
-  <div class="row"><div><label>Quantidade</label><input id="vq" type="number" min="1" value="" placeholder="1" oninput="totV();prevP()"></div><div><label>Cliente</label><select id="vc"><option value="">Cliente avulso</option>${D.clientes.map(c=>{const t=stCli(c.id);return `<option value="${c.id}">${esc(c.nome)}${t?(t==="atrasado"?" ⚠ (atrasado)":" ⚠ (em débito)"):""}</option>`}).join("")}</select></div></div>
+  <label>Produto</label><select id="vp" onchange="selP()"><option value="">Selecione o produto</option>${D.produtos.filter(p=>p.estoque>0).map(p=>`<option value="${p.id}">${esc(p.nome)} – ${money(p.preco)} · Estoque: ${p.estoque}</option>`).join("")}</select><div id="vinfo"></div>
+  <div class="row"><div><label>Quantidade</label><input id="vq" type="number" min="1" value="" placeholder="1" oninput="totV();prevP()"></div><div style="display:flex;align-items:flex-end"><button class="btn sec" style="width:100%" onclick="addItem()">+ Adicionar à venda</button></div></div>
+  <div id="vitens">${listaV()}</div>
+  <label>Cliente</label><div style="display:flex;gap:8px"><select id="vc" onchange="prevP()" style="flex:1">${opcCli()}</select><button class="btn sec" style="flex:none" onclick="novoCliente(c=>recCli(c.id))">+ Novo</button></div>
   <label>Forma de pagamento</label><select id="vf" onchange="fPag()"><option value="">Selecione a forma de pagamento</option>${FORMAS.map(opt).join("")}<option>${PARC}</option></select>
   <div id="pbox" hidden>
+    <div id="vaviso" class="tip" style="border-color:var(--warn);color:var(--warn)" hidden>Para vender parcelado é preciso escolher um cliente.<br><button class="btn" style="margin-top:8px;padding:8px 12px" onclick="novoCliente(c=>recCli(c.id))">Cadastrar cliente agora</button></div>
     <div class="row"><div><label>Nº de parcelas</label><input id="vn" type="number" min="2" max="24" value="3" oninput="prevP()"></div><div><label>Entrada hoje (R$, opcional)</label><input id="ve" type="number" min="0" step="0.01" placeholder="0,00" oninput="prevP()"></div></div>
     <div class="row"><div><label>Entrada paga em</label><select id="vef">${FORMAS.map(opt).join("")}</select></div><div><label>1º vencimento</label><input id="vd" type="date" oninput="prevP()"></div></div>
     <label>Intervalo entre as parcelas</label><select id="vi" onchange="prevP()"><option value="mensal">Mensal</option><option value="quinzenal">Quinzenal (15 dias)</option><option value="semanal">Semanal</option></select>
     <div class="tip" id="vpv"></div></div>
   <div style="margin-top:12px"><button class="btn" onclick="vender()">Registrar venda</button></div></div>
-  <div class="card"><h2>Histórico</h2>${D.vendas.length?[...D.vendas].reverse().map(v=>`<div class="it"><div class="t"><b>${v.qtd}x ${esc(v.produto_nome)}</b><small>${esc(v.cliente_nome||"Cliente avulso")} · ${new Date(v.criado_em).toLocaleDateString("pt-BR")} · ${v.n_parcelas>1?"Parcelado "+v.n_parcelas+"x":esc(v.forma||"")}</small></div><div style="text-align:right"><b ${v.cancelada?'style="text-decoration:line-through;opacity:.5"':""}>${money(v.total)}</b>${v.cancelada?`<small class="low" style="display:block">cancelada</small>`:`<br><button class="btn sec" style="padding:4px 8px;font-size:.75rem" onclick="cancelar('${v.id}')">Cancelar</button>`}</div></div>`).join(""):`<div class="empty">Nenhuma venda registrada.</div>`}</div>`;
+  <div class="card"><h2>Histórico</h2>${D.vendas.length?[...D.vendas].reverse().map(v=>`<div class="it"><div class="t"><b>${esc(vLabel(v))}</b><small>${esc(v.cliente_nome||"Cliente avulso")} · ${new Date(v.criado_em).toLocaleDateString("pt-BR")} · ${v.n_parcelas>1?"Parcelado "+v.n_parcelas+"x":esc(v.forma||"")}</small></div><div style="text-align:right"><b ${v.cancelada?'style="text-decoration:line-through;opacity:.5"':""}>${money(v.total)}</b>${v.cancelada?`<small class="low" style="display:block">cancelada</small>`:`<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:4px"><button class="btn sec" style="padding:4px 8px;font-size:.75rem" onclick="editarVenda('${v.id}')">Editar</button><button class="btn sec" style="padding:4px 8px;font-size:.75rem" onclick="cancelar('${v.id}')">Cancelar</button></div>`}</div></div>`).join(""):`<div class="empty">Nenhuma venda registrada.</div>`}</div>`;
 }
+function recCli(id){const s=$("#vc");if(!s)return;s.innerHTML=opcCli();s.value=id;prevP()}
+function listaV(){
+  if(!carrinhoV.length)return "";
+  return `<div class="tip" style="margin-top:10px"><b>Itens da venda</b>${carrinhoV.map((i,k)=>{const p=D.produtos.find(x=>x.id===i.pid);return `<div class="it" style="padding:6px 0"><div class="t"><b>${i.qtd}x ${esc(p.nome)}</b><small>${money(p.preco)} cada</small></div><b>${money(p.preco*i.qtd)}</b><button class="btn sec" style="padding:4px 10px" onclick="rmItem(${k})" aria-label="Remover item">✕</button></div>`}).join("")}<div style="text-align:right;margin-top:6px">Total: <b class="price">${money(totItens(carrinhoV))}</b></div></div>`;
+}
+function addItem(){
+  const p=D.produtos.find(x=>x.id===gv("vp")),n=parseInt(gv("vq"));
+  if(!p){alert("Selecione o produto.");return}
+  if(!n||n<1){alert("Informe a quantidade.");return}
+  if(n>disp(p)){alert("Estoque insuficiente. Disponível: "+disp(p)+".");return}
+  const e=carrinhoV.find(i=>i.pid===p.id);e?e.qtd+=n:carrinhoV.push({pid:p.id,qtd:n});
+  $("#vp").value="";$("#vq").value="";$("#vinfo").innerHTML="";atualV();
+}
+function atualV(){$("#vitens").innerHTML=listaV();prevP()}
+function rmItem(i){carrinhoV.splice(i,1);atualV()}
 function totV(){
-  const p=D.produtos.find(x=>x.id===$("#vp").value),n=parseInt($("#vq").value)||0,t=$("#vtot");
-  if(t)t.innerHTML=p&&n?"Total: <span class='price'>"+money(Math.round(p.preco*n*100)/100)+"</span>":"";
+  const p=D.produtos.find(x=>x.id===gv("vp")),n=parseInt(gv("vq"))||0,t=$("#vtot");
+  if(t)t.innerHTML=p&&n?"Total deste item: <span class='price'>"+money(Math.round(p.preco*n*100)/100)+"</span>":"";
 }
 function selP(){
-  const p=D.produtos.find(x=>x.id===$("#vp").value),b=$("#vinfo");
+  const p=D.produtos.find(x=>x.id===gv("vp")),b=$("#vinfo");
   if(!p){b.innerHTML="";prevP();return}
   if(!$("#vq").value)$("#vq").value=1;
-  b.innerHTML=`<div class="it" style="margin-top:8px">${img(p)}<div class="t"><b>${esc(p.nome)}</b><small>${catNome(p.categoria_id)?esc(catNome(p.categoria_id))+" · ":""}${esc(p.descricao)}</small><small>${p.estoque} em estoque</small></div><b class="price">${money(p.preco)}</b></div><div id="vtot" style="margin-top:6px;font-weight:600"></div>`;
+  const na=carrinhoV.filter(i=>i.pid===p.id).reduce((a,i)=>a+i.qtd,0);
+  b.innerHTML=`<div class="it" style="margin-top:8px">${img(p)}<div class="t"><b>${esc(p.nome)}</b><small>${catNome(p.categoria_id)?esc(catNome(p.categoria_id))+" · ":""}${esc(p.descricao)}</small><small><b class="${disp(p)<=2?"low":""}">Estoque: ${p.estoque}</b>${na?" · já na venda: "+na:""}</small></div><b class="price">${money(p.preco)}</b></div><div id="vtot" style="margin-top:6px;font-weight:600"></div>`;
   totV();prevP();
 }
 function fPag(){
-  const par=$("#vf").value===PARC;$("#pbox").hidden=!par;
+  const par=gv("vf")===PARC;$("#pbox").hidden=!par;
   if(par&&!$("#vd").value){const d=new Date();d.setMonth(d.getMonth()+1);$("#vd").value=fmtD(d)}
   prevP();
 }
 function prevP(){
-  const bx=$("#vpv");if(!bx||$("#vf").value!==PARC)return;
-  const o=$("#vp").selectedOptions[0],n=parseInt($("#vn").value),q2=parseInt($("#vq").value)||1,dv=$("#vd").value;
-  if(!o||!o.dataset.p||!(n>=2)||!dv){bx.textContent="";return}
-  const tot=Math.round(+o.dataset.p*q2*100)/100,en=parseFloat($("#ve").value)||0;
+  const bx=$("#vpv");if(!bx||gv("vf")!==PARC)return;
+  $("#vaviso").hidden=!!gv("vc");
+  const l=itensV();if(!l.length){bx.textContent="Adicione os produtos da venda para ver as parcelas.";return}
+  const tot=totItens(l),n=parseInt(gv("vn")),dv=gv("vd");
+  if(!(n>=2)||!dv){bx.textContent="";return}
+  const en=parseFloat(gv("ve"))||0;
   if(en<0||en>=tot){bx.textContent="A entrada precisa ser menor que o total ("+money(tot)+").";return}
-  const pl=plano(tot,n,en,dv,$("#vi").value);
+  const pl=plano(tot,n,en,dv,gv("vi"));
   bx.innerHTML="Total: <b>"+money(tot)+"</b>"+(en>0?" · entrada "+money(en):"")+"<br>"+n+"x de <b>"+money(pl[0].valor)+"</b><br>De "+br(pl[0].vencimento)+" até "+br(pl[n-1].vencimento);
 }
+function novoCliente(cb){
+  const m=modal(`<h2>Novo cliente</h2><label>Nome</label><input id="nn"><label>Telefone / WhatsApp</label><input id="nt" inputmode="tel"><label>Endereço</label><input id="ne"><div class="row" style="margin-top:12px"><button class="btn sec" id="nx" style="min-width:0">Cancelar</button><button class="btn" id="ns" style="min-width:0">Salvar cliente</button></div>`);
+  const Q=x=>m.querySelector(x);Q("#nn").focus();
+  Q("#nx").onclick=()=>m.remove();
+  Q("#ns").onclick=async()=>{
+    const nome=Q("#nn").value.trim();if(!nome){alert("Informe o nome do cliente.");return}
+    const c=await q(db.from("clientes").insert({nome,telefone:Q("#nt").value.trim(),endereco:Q("#ne").value.trim()}).select().single());
+    if(!c)return;m.remove();await load();cb(c);
+  };
+}
 async function vender(){
-  const p=D.produtos.find(x=>x.id===$("#vp").value),n=parseInt($("#vq").value),c=D.clientes.find(x=>x.id===$("#vc").value);
-  if(!p){alert("Selecione o produto.");return}
-  if(!n||n<1){alert("Informe a quantidade.");return}
-  if(n>p.estoque){alert("Estoque insuficiente.");return}
-  const forma=$("#vf").value;if(!forma){alert("Selecione a forma de pagamento.");return}
-  const par=forma===PARC,total=Math.round(p.preco*n*100)/100,agora=new Date().toISOString(),linhas=[];
+  const l=itensV();
+  if(!l.length){alert("Selecione ao menos um produto e a quantidade.");return}
+  for(const i of l){const p=D.produtos.find(x=>x.id===i.pid);if(i.qtd>p.estoque){alert("Estoque insuficiente de "+p.nome+". Disponível: "+p.estoque+".");return}}
+  const forma=gv("vf");if(!forma){alert("Selecione a forma de pagamento.");return}
+  const c=D.clientes.find(x=>x.id===gv("vc")),par=forma===PARC,total=totItens(l),agora=new Date().toISOString(),linhas=[];
   let resumo="";
   if(par){
-    if(!c){alert("Para vender parcelado, escolha um cliente cadastrado. Se ele ainda não existe, cadastre na aba Clientes.");return}
-    const np=parseInt($("#vn").value),en=parseFloat($("#ve").value)||0,dv=$("#vd").value;
+    if(!c){alert("Para vender parcelado, escolha um cliente ou toque em \"+ Novo\" para cadastrar agora.");return}
+    const np=parseInt(gv("vn")),en=parseFloat(gv("ve"))||0,dv=gv("vd");
     if(!(np>=2&&np<=24)||en<0||en>=total||!dv){alert("Confira o número de parcelas, a entrada (precisa ser menor que o total) e o primeiro vencimento.");return}
-    const pl=plano(total,np,en,dv,$("#vi").value);
-    if(en>0)linhas.push({numero:0,valor:en,vencimento:hoje(),paga:true,pago_em:agora,forma:$("#vef").value});
+    const pl=plano(total,np,en,dv,gv("vi"));
+    if(en>0)linhas.push({numero:0,valor:en,vencimento:hoje(),paga:true,pago_em:agora,forma:gv("vef")});
     pl.forEach(x=>linhas.push({...x,paga:false}));
     resumo="\nParcelado em "+np+"x de "+money(pl[0].valor)+(en>0?" + entrada de "+money(en):"")+"\n1º vencimento: "+br(dv);
   }else linhas.push({numero:1,valor:total,vencimento:hoje(),paga:true,pago_em:agora,forma});
-  if(!confirm("Registrar esta venda?\n\n"+n+"x "+p.nome+"\nCliente: "+(c?c.nome:"Cliente avulso")+"\nTotal: "+money(total)+"\nPagamento: "+(par?PARC:forma)+resumo))return;
-  const v=await q(db.from("vendas").insert({produto_id:p.id,produto_nome:p.nome,qtd:n,total,cliente_id:c?c.id:null,cliente_nome:c?c.nome:"",forma:par?PARC:forma,n_parcelas:par?linhas.filter(l=>l.numero>0).length:1}).select().single());
+  const txt=l.map(i=>i.qtd+"x "+D.produtos.find(x=>x.id===i.pid).nome).join("\n");
+  if(!confirm("Registrar esta venda?\n\n"+txt+"\nCliente: "+(c?c.nome:"Cliente avulso")+"\nTotal: "+money(total)+"\nPagamento: "+(par?PARC:forma)+resumo))return;
+  const p0=D.produtos.find(x=>x.id===l[0].pid),cid=c?c.id:null;
+  const v=await q(db.from("vendas").insert({produto_id:p0.id,produto_nome:l.length>1?p0.nome+" +"+(l.length-1)+" item(ns)":p0.nome,qtd:l.reduce((a,i)=>a+i.qtd,0),total,cliente_id:cid,cliente_nome:c?c.nome:"",forma:par?PARC:forma,n_parcelas:par?linhas.filter(x=>x.numero>0).length:1}).select().single());
   if(!v)return;
-  if(!await q(db.from("parcelas").insert(linhas.map(l=>({...l,venda_id:v.id,cliente_id:c?c.id:null}))))){await q(db.from("vendas").delete().eq("id",v.id));return}
-  await q(db.from("produtos").update({estoque:p.estoque-n}).eq("id",p.id));
-  await load();draw();
+  const desfaz=()=>q(db.from("vendas").delete().eq("id",v.id));
+  if(!await q(db.from("venda_itens").insert(l.map(i=>{const p=D.produtos.find(x=>x.id===i.pid);return{venda_id:v.id,produto_id:p.id,produto_nome:p.nome,qtd:i.qtd,preco:p.preco,subtotal:Math.round(p.preco*i.qtd*100)/100}})))){await desfaz();return}
+  const pr=await q(db.from("parcelas").insert(linhas.map(x=>({...x,valor_pago:x.paga?x.valor:0,venda_id:v.id,cliente_id:cid}))).select());
+  if(!pr){await desfaz();return}
+  const pagos=pr.filter(x=>x.paga).map(x=>({venda_id:v.id,parcela_id:x.id,cliente_id:cid,valor:x.valor,forma:x.forma,pago_em:x.pago_em}));
+  if(pagos.length&&!await q(db.from("pagamentos").insert(pagos))){await desfaz();return}
+  for(const i of l){const p=D.produtos.find(x=>x.id===i.pid);await q(db.from("produtos").update({estoque:p.estoque-i.qtd}).eq("id",p.id))}
+  carrinhoV=[];await load();draw();
 }
 async function cancelar(id){
   const v=D.vendas.find(x=>x.id===id);if(!v||!confirm("Cancelar esta venda e devolver ao estoque?\n\nO dinheiro dela deixa de contar no caixa e as parcelas em aberto somem da lista de cobrança."))return;
   if(!await q(db.from("vendas").update({cancelada:true}).eq("id",id)))return;
-  const p=D.produtos.find(x=>x.id===v.produto_id);
-  if(p)await q(db.from("produtos").update({estoque:p.estoque+v.qtd}).eq("id",p.id));
+  const it=D.itens.filter(i=>i.venda_id===id),lista=it.length?it.map(i=>({pid:i.produto_id,qtd:i.qtd})):[{pid:v.produto_id,qtd:v.qtd}];
+  for(const i of lista){const p=D.produtos.find(x=>x.id===i.pid);if(p)await q(db.from("produtos").update({estoque:p.estoque+i.qtd}).eq("id",p.id))}
   await load();draw();
+}
+function editarVenda(id){
+  const v=D.vendas.find(x=>x.id===id),par=(v.n_parcelas||1)>1||v.forma===PARC;
+  const m=modal(`<h2>Editar venda</h2><small style="color:var(--mut)">${esc(vLabel(v))} · ${money(v.total)}</small>
+  <label>Cliente</label><div style="display:flex;gap:8px"><select id="ec" style="flex:1">${par?opcCli().replace('<option value="">Cliente avulso</option>',""):opcCli()}</select><button class="btn sec" style="flex:none" id="en">+ Novo</button></div>
+  ${par?`<div class="tip">Venda parcelada: aqui você corrige o cliente. Para mudar valores ou parcelas, cancele e registre de novo. Recebimentos errados podem ser estornados em Financeiro → A receber.</div>`:`<label>Forma de pagamento</label><select id="ef">${FORMAS.map(opt).join("")}</select>`}
+  <div class="row" style="margin-top:12px"><button class="btn sec" id="ex" style="min-width:0">Cancelar</button><button class="btn" id="es" style="min-width:0">Salvar alterações</button></div>`);
+  const Q=x=>m.querySelector(x);
+  Q("#ec").value=v.cliente_id||"";if(!par)Q("#ef").value=v.forma;
+  Q("#en").onclick=()=>novoCliente(c=>{Q("#ec").innerHTML=(par?opcCli().replace('<option value="">Cliente avulso</option>',""):opcCli());Q("#ec").value=c.id});
+  Q("#ex").onclick=()=>m.remove();
+  Q("#es").onclick=async()=>{
+    const c=D.clientes.find(x=>x.id===Q("#ec").value),cid=c?c.id:null;
+    if(par&&!c){alert("Venda parcelada precisa de um cliente.");return}
+    const forma=par?v.forma:Q("#ef").value;
+    if(!await q(db.from("vendas").update({cliente_id:cid,cliente_nome:c?c.nome:"",forma}).eq("id",id)))return;
+    await q(db.from("parcelas").update(par?{cliente_id:cid}:{cliente_id:cid,forma}).eq("venda_id",id));
+    await q(db.from("pagamentos").update(par?{cliente_id:cid}:{cliente_id:cid,forma}).eq("venda_id",id));
+    m.remove();await load();draw();
+  };
 }
 
 /* FINANCEIRO */
 const ativa=id=>{const v=D.vendas.find(x=>x.id===id);return !!v&&!v.cancelada};
 const soma=a=>a.reduce((s,x)=>s+Number(x.valor),0);
+const rest=x=>Math.round((Number(x.valor)-Number(x.valor_pago||0))*100)/100;
+const somaR=a=>Math.round(a.reduce((s,x)=>s+rest(x),0)*100)/100;
 function inicioPer(){const d=new Date();d.setHours(0,0,0,0);if(per==="hoje")return d;if(per==="sem"){d.setDate(d.getDate()-6);return d}if(per==="mes"){d.setDate(1);return d}return new Date(0)}
 function vFin(){
   const sub=`<div class="chips">${[["caixa","💵 Caixa"],["receber","📋 A receber"]].map(([k,l])=>`<button class="chip ${fin===k?"on":""}" onclick="fin='${k}';draw()">${l}</button>`).join("")}</div>`;
   return sub+(fin==="caixa"?vCaixa():vReceber());
 }
 function vCaixa(){
-  const ini=inicioPer(),P=D.parcelas.filter(x=>ativa(x.venda_id)),R=P.filter(x=>x.paga&&new Date(x.pago_em)>=ini),tot=soma(R),por={};
+  const ini=inicioPer(),R=D.pagamentos.filter(x=>ativa(x.venda_id)&&new Date(x.pago_em)>=ini),tot=soma(R),por={};
   R.forEach(x=>{const f=x.forma||"Não informada";por[f]=(por[f]||0)+Number(x.valor)});
-  const ab=P.filter(x=>!x.paga),atr=ab.filter(x=>x.vencimento<hoje()),lista=Object.entries(por).sort((a,b)=>b[1]-a[1]);
+  const ab=D.parcelas.filter(x=>!x.paga&&ativa(x.venda_id)),atr=ab.filter(x=>x.vencimento<hoje()),lista=Object.entries(por).sort((a,b)=>b[1]-a[1]);
   const mov=[...R].sort((a,b)=>new Date(b.pago_em)-new Date(a.pago_em)).slice(0,30);
   return `<div class="chips">${[["hoje","Hoje"],["sem","7 dias"],["mes","Este mês"],["tudo","Tudo"]].map(([k,l])=>`<button class="chip ${per===k?"on":""}" onclick="per='${k}';draw()">${l}</button>`).join("")}</div>
-  <div class="stats"><div class="stat"><span>Recebido no período</span><b>${money(tot)}</b></div><div class="stat"><span>A receber (parcelas)</span><b>${money(soma(ab))}</b></div><div class="stat"><span>Em atraso</span><b ${atr.length?'style="color:var(--warn)"':""}>${money(soma(atr))}</b></div></div>
+  <div class="stats"><div class="stat"><span>Recebido no período</span><b>${money(tot)}</b></div><div class="stat"><span>A receber (parcelas)</span><b>${money(somaR(ab))}</b></div><div class="stat"><span>Em atraso</span><b ${atr.length?'style="color:var(--warn)"':""}>${money(somaR(atr))}</b></div></div>
   <div class="card"><h2>Como o dinheiro entrou</h2>${lista.length?lista.map(([f,v])=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(f)}</span><b>${money(v)} <small style="color:var(--mut)">${Math.round(v/tot*100)}%</small></b></div><div class="bar"><i style="width:${v/tot*100}%"></i></div></div>`).join(""):`<div class="empty">Nenhuma entrada neste período.</div>`}</div>
-  <div class="card"><h2>Últimas entradas</h2>${mov.length?mov.map(x=>{const v=D.vendas.find(y=>y.id===x.venda_id)||{},rot=x.numero===0?"Entrada":(x.numero===1&&v.n_parcelas<=1)?"Venda à vista":"Parcela "+x.numero+"/"+v.n_parcelas;return `<div class="it"><div class="t"><b>${esc(v.cliente_nome||"Cliente avulso")}</b><small>${rot} · ${esc(x.forma||"")} · ${new Date(x.pago_em).toLocaleDateString("pt-BR")} · ${esc(v.produto_nome||"")}</small></div><b>${money(x.valor)}</b></div>`}).join(""):`<div class="empty">Sem movimentações.</div>`}</div>`;
+  <div class="card"><h2>Últimas entradas</h2>${mov.length?mov.map(x=>{const v=D.vendas.find(y=>y.id===x.venda_id)||{},pc=D.parcelas.find(y=>y.id===x.parcela_id)||{},rot=pc.numero===0?"Entrada":(pc.numero===1&&(v.n_parcelas||1)<=1)?"Venda à vista":"Parcela "+(pc.numero||"")+"/"+v.n_parcelas;return `<div class="it"><div class="t"><b>${esc(v.cliente_nome||"Cliente avulso")}</b><small>${rot} · ${esc(x.forma||"")} · ${new Date(x.pago_em).toLocaleDateString("pt-BR")} · ${esc(vLabel(v))}</small></div><b>${money(x.valor)}</b></div>`}).join(""):`<div class="empty">Sem movimentações.</div>`}</div>`;
 }
 const chaveCli=v=>v.cliente_id||("n:"+v.cliente_nome);
+const parcsCli=k=>D.parcelas.filter(x=>!x.paga&&ativa(x.venda_id)&&chaveCli(D.vendas.find(y=>y.id===x.venda_id))===k).sort((a,b)=>a.vencimento.localeCompare(b.vencimento)||a.numero-b.numero);
 function vReceber(){
   const hj=hoje(),g={};
   D.parcelas.filter(x=>!x.paga&&ativa(x.venda_id)).forEach(x=>{const v=D.vendas.find(y=>y.id===x.venda_id),k=chaveCli(v);(g[k]=g[k]||{k,nome:v.cliente_nome||"Cliente",ps:[]}).ps.push(x)});
-  const L=Object.values(g).map(o=>{o.ps.sort((a,b)=>a.vencimento.localeCompare(b.vencimento));o.tot=soma(o.ps);o.atr=o.ps.some(x=>x.vencimento<hj);return o}).sort((a,b)=>(b.atr-a.atr)||a.ps[0].vencimento.localeCompare(b.ps[0].vencimento));
+  const L=Object.values(g).map(o=>{o.ps.sort((a,b)=>a.vencimento.localeCompare(b.vencimento));o.tot=somaR(o.ps);o.atr=o.ps.some(x=>x.vencimento<hj);return o}).sort((a,b)=>(b.atr-a.atr)||a.ps[0].vencimento.localeCompare(b.ps[0].vencimento));
   if(!L.length)return `<div class="card"><div class="empty">Nenhuma parcela em aberto. 🎉<br><small>As vendas parceladas aparecem aqui.</small></div></div>`;
   return `<div class="card"><h2>Clientes com parcelas em aberto (${L.length})</h2>${L.map(o=>{
     const pr=o.ps[0],ab=abre===o.k;
     return `<div class="cl ${o.atr?"atrasado":"debito"}"><b>${esc(o.nome)}</b> ${o.atr?'<span class="tag atrasado">ATRASADO</span>':'<span class="tag debito">EM DÉBITO</span>'}
     <div class="m"><span>Faltam: <b>${o.ps.filter(x=>x.numero>0).length} parcela(s)</b></span><span>Em aberto: <b>${money(o.tot)}</b></span><span>Próxima: <b class="${pr.vencimento<hj?"late":""}">${br(pr.vencimento)}</b></span></div>
-    <div class="row"><button class="btn sec" data-k="${esc(o.k)}" onclick="abrirR(this.dataset.k)">${ab?"Fechar":"Ver parcelas"}</button><button class="btn sec" data-k="${esc(o.k)}" onclick="cobrar(this.dataset.k)">Cobrar no WhatsApp</button></div>
+    <div class="row"><button class="btn" data-k="${esc(o.k)}" onclick="abrirReceb(this.dataset.k)" style="min-width:0">Receber</button><button class="btn sec" data-k="${esc(o.k)}" onclick="abrirR(this.dataset.k)" style="min-width:0">${ab?"Fechar":"Parcelas"}</button><button class="btn sec" data-k="${esc(o.k)}" onclick="cobrar(this.dataset.k)" style="min-width:0">Cobrar</button></div>
     ${ab?detParc(o):""}</div>`}).join("")}</div>`;
 }
 function abrirR(k){abre=abre===k?null:k;draw()}
 function detParc(o){
   const hj=hoje(),vs=[...new Set(o.ps.map(x=>x.venda_id))];
-  return `<div class="tip" style="margin-top:10px"><label style="margin-top:0">Forma de recebimento (ao tocar em Receber)</label><select id="fr">${FORMAS.map(opt).join("")}</select>
-  ${vs.map(id=>{const v=D.vendas.find(y=>y.id===id),ps=D.parcelas.filter(x=>x.venda_id===id).sort((a,b)=>a.numero-b.numero);
-    return `<div style="margin-top:12px"><b>${v.qtd}x ${esc(v.produto_nome)}</b> <small>· total ${money(v.total)} · ${new Date(v.criado_em).toLocaleDateString("pt-BR")}</small>${ps.map(x=>`<div class="it" style="padding:6px 0"><div class="t"><b>${x.numero===0?"Entrada":x.numero+"/"+v.n_parcelas}</b> · ${br(x.vencimento)} · ${money(x.valor)}<small>${x.paga?"✓ paga em "+new Date(x.pago_em).toLocaleDateString("pt-BR")+" ("+esc(x.forma||"")+")":x.vencimento<hj?'<span class="late">atrasada</span>':"a vencer"}</small></div>${x.paga?`<button class="btn sec" style="padding:6px 10px" onclick="desfazP('${x.id}')">Desfazer</button>`:`<button class="btn" style="padding:6px 10px" onclick="receberP('${x.id}')">Receber</button>`}</div>`).join("")}</div>`}).join("")}</div>`;
+  return `<div class="tip" style="margin-top:10px">${vs.map(id=>{
+    const v=D.vendas.find(y=>y.id===id),ps=D.parcelas.filter(x=>x.venda_id===id).sort((a,b)=>a.numero-b.numero),pg=D.pagamentos.filter(x=>x.venda_id===id).sort((a,b)=>new Date(a.pago_em)-new Date(b.pago_em));
+    return `<div style="margin-top:10px"><b>${esc(vLabel(v))}</b> <small>· total ${money(v.total)} · ${new Date(v.criado_em).toLocaleDateString("pt-BR")}</small>${ps.map(x=>`<div class="it" style="padding:6px 0"><div class="t"><b>${x.numero===0?"Entrada":x.numero+"/"+v.n_parcelas}</b> · ${br(x.vencimento)} · ${money(x.valor)}<small>${x.paga?"✓ paga":(x.valor_pago>0?"parcial: pago "+money(x.valor_pago)+" · falta "+money(rest(x)):(x.vencimento<hj?'<span class="late">atrasada</span>':"a vencer"))}</small></div>${x.paga?"":`<button class="btn" style="padding:6px 10px" data-k="${esc(o.k)}" data-p="${x.id}" onclick="abrirReceb(this.dataset.k,this.dataset.p)">Receber</button>`}</div>`).join("")}
+    ${pg.length?`<small style="display:block;margin-top:6px;color:var(--mut)">Recebimentos:</small>${pg.map(g=>`<div class="it" style="padding:4px 0"><div class="t"><small>${new Date(g.pago_em).toLocaleDateString("pt-BR")} · ${esc(g.forma||"")} · <b>${money(g.valor)}</b></small></div><button class="btn sec" style="padding:4px 8px;font-size:.72rem" onclick="estornar('${g.id}')">Estornar</button></div>`).join("")}`:""}</div>`}).join("")}</div>`;
 }
-async function receberP(id){
-  const x=D.parcelas.find(y=>y.id===id),v=D.vendas.find(y=>y.id===x.venda_id),f=$("#fr").value;
-  if(!confirm("Receber a parcela "+x.numero+"/"+v.n_parcelas+" de "+money(x.valor)+" de "+(v.cliente_nome||"cliente")+"?\nForma de recebimento: "+f))return;
-  if(await q(db.from("parcelas").update({paga:true,pago_em:new Date().toISOString(),forma:f}).eq("id",id))){await load();draw()}
+function alocar(ps,valor){
+  let r=Math.round(valor*100);const out=[];
+  for(const x of ps){if(r<=0)break;const f=Math.round(rest(x)*100),a=Math.min(r,f);if(a>0){out.push({x,v:a/100,quita:a===f});r-=a}}
+  return {out,sobra:r/100};
 }
-async function desfazP(id){
-  const x=D.parcelas.find(y=>y.id===id);
-  if(!confirm("Desfazer este recebimento de "+money(x.valor)+"?\nO valor sai do caixa e a parcela volta a ficar em aberto."))return;
-  if(await q(db.from("parcelas").update({paga:false,pago_em:null,forma:null}).eq("id",id))){await load();draw()}
+function abrirReceb(k,pid){
+  let ps=parcsCli(k);if(!ps.length)return;
+  if(pid){const f=ps.find(x=>x.id===pid);if(f)ps=[f,...ps.filter(x=>x!==f)]}
+  const v0=D.vendas.find(y=>y.id===ps[0].venda_id),max=somaR(ps);
+  const m=modal(`<h2>Receber pagamento</h2><small style="color:var(--mut)">${esc(v0.cliente_nome||"Cliente")} · em aberto: <b>${money(max)}</b></small>
+  <label>Valor recebido (R$)</label><input id="rv" type="number" step="0.01" min="0.01" value="${rest(ps[0])}">
+  <label>Forma de recebimento</label><select id="rf"><option value="">Selecione a forma</option>${FORMAS.map(opt).join("")}</select>
+  <div class="tip" id="rp"></div>
+  <div class="row" style="margin-top:12px"><button class="btn sec" id="rx" style="min-width:0">Cancelar</button><button class="btn" id="ro" style="min-width:0">Confirmar recebimento</button></div>`);
+  const Q=x=>m.querySelector(x),val=()=>Math.round((parseFloat(Q("#rv").value)||0)*100)/100;
+  const pv=()=>{
+    const v=val();
+    if(v<=0){Q("#rp").textContent="Informe o valor recebido.";return}
+    if(v>max+0.004){Q("#rp").innerHTML='<span class="late">O valor é maior que o total em aberto ('+money(max)+').</span>';return}
+    Q("#rp").innerHTML=alocar(ps,v).out.map(a=>{const vd=D.vendas.find(y=>y.id===a.x.venda_id);return (a.x.numero===0?"Entrada":"Parcela "+a.x.numero+"/"+vd.n_parcelas)+" ("+br(a.x.vencimento)+"): <b>"+money(a.v)+"</b> "+(a.quita?"✓ quita":"· parcial, falta "+money(Math.round((rest(a.x)-a.v)*100)/100))}).join("<br>");
+  };
+  Q("#rv").oninput=pv;pv();
+  Q("#rx").onclick=()=>m.remove();
+  Q("#ro").onclick=async()=>{
+    const v=val(),f=Q("#rf").value;
+    if(v<=0){alert("Informe o valor recebido.");return}
+    if(v>max+0.004){alert("O valor é maior que o total em aberto ("+money(max)+").");return}
+    if(!f){alert("Selecione a forma de recebimento.");return}
+    const {out}=alocar(ps,v),agora=new Date().toISOString();
+    if(!await q(db.from("pagamentos").insert(out.map(a=>({venda_id:a.x.venda_id,parcela_id:a.x.id,cliente_id:a.x.cliente_id,valor:a.v,forma:f,pago_em:agora})))))return;
+    for(const a of out){const n=Math.round((Number(a.x.valor_pago||0)+a.v)*100)/100;await q(db.from("parcelas").update({valor_pago:n,paga:n>=Number(a.x.valor)-0.004}).eq("id",a.x.id))}
+    m.remove();await load();draw();
+  };
+}
+async function estornar(id){
+  const g=D.pagamentos.find(y=>y.id===id);if(!g)return;
+  if(!confirm("Estornar este recebimento de "+money(g.valor)+" ("+(g.forma||"")+")?\nO valor sai do caixa e volta para o que o cliente deve."))return;
+  const p=D.parcelas.find(x=>x.id===g.parcela_id);
+  if(!await q(db.from("pagamentos").delete().eq("id",id)))return;
+  if(p){const n=Math.max(0,Math.round((Number(p.valor_pago||0)-Number(g.valor))*100)/100);await q(db.from("parcelas").update({valor_pago:n,paga:n>=Number(p.valor)-0.004}).eq("id",p.id))}
+  await load();draw();
 }
 function cobrar(k){
-  const ps=D.parcelas.filter(x=>!x.paga&&ativa(x.venda_id)&&chaveCli(D.vendas.find(y=>y.id===x.venda_id))===k).sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
-  if(!ps.length)return;
+  const ps=parcsCli(k);if(!ps.length)return;
   const x=ps[0],v=D.vendas.find(y=>y.id===x.venda_id),c=D.clientes.find(y=>y.id===v.cliente_id),t=((c&&c.telefone)||"").replace(/\D/g,"");
   if(!t){alert("Esse cliente não tem telefone cadastrado. Edite o cadastro na aba Clientes.");return}
-  const msg="Olá, "+(v.cliente_nome||"tudo bem")+"! Passando para lembrar da parcela "+x.numero+"/"+v.n_parcelas+" de "+money(x.valor)+", com vencimento em "+br(x.vencimento)+". Qualquer dúvida é só me chamar!";
+  const msg="Olá, "+(v.cliente_nome||"tudo bem")+"! Passando para lembrar da parcela "+x.numero+"/"+v.n_parcelas+" de "+money(rest(x))+", com vencimento em "+br(x.vencimento)+". Qualquer dúvida é só me chamar!";
   window.open("https://wa.me/"+(t.length<=11?"55"+t:t)+"?text="+encodeURIComponent(msg),"_blank");
 }
 const stCli=id=>{const ps=D.parcelas.filter(x=>x.cliente_id===id&&!x.paga&&ativa(x.venda_id));if(!ps.length)return "";return ps.some(x=>x.vencimento<hoje())?"atrasado":"debito"};
@@ -559,7 +668,7 @@ function vHome(){
   const it=[["produtos","📦","Produtos",baixo?baixo+" com estoque baixo":"",""],["vendas","🛒","Vendas","",""],["fin","💵","Financeiro",pAtr?pAtr+" parcela"+(pAtr>1?"s":"")+" atrasada"+(pAtr>1?"s":""):"",pAtr?"r":""],["clientes","👥","Clientes",devendo?devendo+" em débito"+(atras?" ("+atras+" atrasado"+(atras>1?"s":"")+")":""):"",atras?"r":""],["config","⚙️","Ajustes","",""]];
   return `${D.loja&&D.loja.logo_url?"":`<div class="tip" style="margin:0 0 12px">Dica: em Ajustes você pode colocar a logo da sua loja.</div>`}<div class="hgrid"><button class="hcard" style="grid-column:1/-1;min-height:80px;flex-direction:row;gap:12px;background:var(--pri);border-color:var(--pri);color:var(--on,#fff)" onclick="enviarCat()"><span class="he" style="font-size:1.8rem">📲</span><b>Enviar catálogo no WhatsApp</b></button>${it.map(([k,e,l,b,r])=>`<button class="hcard" onclick="tab='${k}';draw()"><span class="he">${e}</span><b>${l}</b>${b?`<small class="hb ${r}">${b}</small>`:""}</button>`).join("")}</div>`;
 }
-const aRec=id=>{const ps=D.parcelas.filter(x=>x.cliente_id===id&&!x.paga&&ativa(x.venda_id));if(!ps.length)return "";return `<small style="display:block;color:var(--pri)">A receber: <b>${money(soma(ps))}</b> · faltam ${ps.length} parcela${ps.length>1?"s":""}</small>`};
+const aRec=id=>{const ps=D.parcelas.filter(x=>x.cliente_id===id&&!x.paga&&ativa(x.venda_id));if(!ps.length)return "";return `<small style="display:block;color:var(--pri)">A receber: <b>${money(somaR(ps))}</b> · faltam ${ps.length} parcela${ps.length>1?"s":""}</small>`};
 
 /* CLIENTES */
 function stC(c){
@@ -587,7 +696,7 @@ function vCli(){
   <div class="m"><span>Compras: <b>${s.n}</b></span><span>Gasto: <b>${money(s.tot)}</b></span><span>Produtos: <b>${s.qt}</b></span></div>
   <small style="display:block;color:var(--mut)">${freq(s)}</small>${aRec(c.id)}
   <div class="row" style="margin-top:8px"><button class="btn sec" onclick="aberto=aberto==='${c.id}'?null:'${c.id}';draw()">Ver compras</button><button class="btn sec" onclick="zapCli('${c.id}')">WhatsApp</button><button class="btn sec" onclick="ec='${c.id}';draw();scrollTo(0,0)">✏️ Editar</button><button class="btn sec" onclick="delCli('${c.id}')">🗑️ Excluir</button></div>
-  ${aberto===c.id?'<div class="tip">'+(s.vs.length?[...s.vs].reverse().map(v=>v.qtd+"x "+esc(v.produto_nome)+" – "+money(v.total)+" · "+new Date(v.criado_em).toLocaleDateString("pt-BR")).join("<br>"):"Nenhuma compra registrada.")+"</div>":""}</div>`).join(""):`<div class="empty">Nenhum cliente cadastrado.</div>`}</div>`;
+  ${aberto===c.id?'<div class="tip">'+(s.vs.length?[...s.vs].reverse().map(v=>esc(vLabel(v))+" – "+money(v.total)+" · "+new Date(v.criado_em).toLocaleDateString("pt-BR")).join("<br>"):"Nenhuma compra registrada.")+"</div>":""}</div>`).join(""):`<div class="empty">Nenhum cliente cadastrado.</div>`}</div>`;
 }
 async function salvarCli(){
   const nome=$("#kn").value.trim();if(!nome){alert("Informe o nome do cliente.");return}
@@ -642,7 +751,7 @@ async function setTema(campo,val){
   await q(db.from("lojas").update({[campo]:val}).eq("id",uid));
 }
 function backup(){
-  const j=JSON.stringify({gerado_em:new Date().toISOString(),loja:D.loja,produtos:D.produtos,categorias:D.categorias,clientes:D.clientes,vendas:D.vendas,parcelas:D.parcelas},null,1);
+  const j=JSON.stringify({gerado_em:new Date().toISOString(),loja:D.loja,produtos:D.produtos,categorias:D.categorias,clientes:D.clientes,vendas:D.vendas,parcelas:D.parcelas,itens:D.itens,pagamentos:D.pagamentos},null,1);
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([j],{type:"application/json"}));a.download="backup-"+D.loja.slug+"-"+hoje()+".json";a.click();
 }
 function copiar(){const l=base()+"?loja="+D.loja.slug;try{navigator.clipboard.writeText(l);alert("Link copiado!")}catch(e){alert("Copie manualmente o link do campo.")}}
