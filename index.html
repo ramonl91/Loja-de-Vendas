@@ -17,8 +17,18 @@ header h1{margin:0;font-size:1.3rem;font-weight:800;letter-spacing:-.01em}
 header p{margin:2px 0 0;font-size:.82rem;font-weight:500;opacity:.85;min-height:1em}
 .lg{display:none;width:68px;height:68px;border-radius:50%;object-fit:contain;background:#fff;border:3px solid rgba(255,255,255,.75);box-shadow:0 10px 22px -8px rgba(0,0,0,.4);margin:0 auto 8px}
 .hm{position:absolute;left:14px;top:16px;width:44px;height:44px;border-radius:14px;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.16);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
-nav{display:none}
-main{max-width:900px;margin:-30px auto 0;padding:0 14px 100px;position:relative}
+nav{position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));max-width:560px;margin:0 auto;z-index:20;display:none;gap:2px;padding:6px;background:var(--card);border:1px solid var(--bd);border-radius:26px;box-shadow:0 18px 40px -16px rgba(20,10,40,.45)}
+nav button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px;border:0;border-radius:20px;background:transparent;color:var(--mut);font:inherit;font-size:.64rem;font-weight:700;cursor:pointer;transition:background .15s,color .15s}
+nav button.on{color:var(--pri);background:var(--bg)}
+@supports (color:color-mix(in srgb,red,blue)){nav button.on{background:color-mix(in srgb,var(--pri) 13%,var(--card))}}
+.lst{max-height:290px;overflow:auto;border:1.5px solid var(--bd);border-radius:14px;background:var(--card);margin-top:6px;box-shadow:var(--sh)}
+.opt{display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:10px;border:0;border-bottom:1px solid var(--bd);background:transparent;color:var(--tx);font:inherit;cursor:pointer}
+.opt:last-child{border-bottom:0}.opt:hover{background:var(--bg)}
+.opt img,.opt .ph{width:42px;height:42px;aspect-ratio:auto;border-radius:10px;object-fit:cover;flex:none;font-size:0}
+.opt .t{flex:1;min-width:0}.opt small{display:block;color:var(--mut);font-size:.78rem}
+.pz{display:flex;gap:18px;align-items:center;flex-wrap:wrap}.pzc{flex:0 0 auto;margin:0 auto}.pzc svg{width:176px;height:176px;display:block}.pzl{flex:1;min-width:210px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;vertical-align:0}
+main{max-width:900px;margin:-30px auto 0;padding:0 14px calc(112px + env(safe-area-inset-bottom,0px));position:relative}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:22px;padding:18px;margin-bottom:14px;box-shadow:var(--sh)}
 h2{margin:0 0 12px;font-size:1.05rem;font-weight:700;letter-spacing:-.01em}
 label{display:block;font-size:.8rem;font-weight:600;color:var(--mut);margin:12px 0 6px}
@@ -192,7 +202,8 @@ function draw(){
     return;
   }
   const home=tab==="home";$("#hm").style.display=home?"none":"block";
-  if(home)lg.style.width=lg.style.height="104px";
+  if(home){lg.style.width=lg.style.height="104px";nv.style.display="none"}
+  else{nv.style.display="flex";nv.innerHTML=[["produtos","box","Produtos"],["vendas","bag","Vendas"],["fin","coin","Financeiro"],["clientes","users","Clientes"],["config","sliders","Ajustes"]].map(([k,i,l])=>`<button class="${tab===k?"on":""}" ${tab===k?'aria-current="page"':""} onclick="tab='${k}';draw();scrollTo(0,0)">${ico(i,22)}<span>${l}</span></button>`).join("")}
   $("#app").innerHTML=({home:vHome,produtos:vProd,vendas:vVen,fin:vFin,clientes:vCli,config:vCfg})[tab]();
 }
 
@@ -461,7 +472,7 @@ function vVen(){
   const baixo=D.produtos.filter(p=>p.estoque<=2).length;
   return `<div class="stats"><div class="stat"><span>Total vendido</span><b>${money(tot)}</b></div><div class="stat"><span>Vendas</span><b>${ok.length}</b></div><div class="stat"><span>Estoque baixo</span><b>${baixo}</b></div></div>
   <div class="card"><h2>Registrar venda</h2>
-  <label>Produto</label><select id="vp" onchange="selP()"><option value="">Selecione o produto</option>${D.produtos.filter(p=>p.estoque>0).map(p=>`<option value="${p.id}">${esc(p.nome)} – ${money(p.preco)} · Estoque: ${p.estoque}</option>`).join("")}</select><div id="vinfo"></div>
+  <label>Produto</label><div id="vbox"><input id="vbusca" type="search" placeholder="Buscar produto pelo nome..." autocomplete="off" oninput="buscaIn()" onfocus="buscaP()" onkeydown="buscaKey(event)"><input id="vp" type="hidden" value=""><div id="vlista" class="lst" hidden></div></div><div id="vinfo"></div>
   <div class="row"><div><label>Quantidade</label><input id="vq" type="number" min="1" value="" placeholder="1" oninput="totV();prevP()"></div><div style="display:flex;align-items:flex-end"><button class="btn sec" style="width:100%" onclick="addItem()">+ Adicionar à venda</button></div></div>
   <div id="vitens">${listaV()}</div>
   <label>Cliente</label><div style="display:flex;gap:8px"><select id="vc" onchange="prevP()" style="flex:1">${opcCli()}</select><button class="btn sec" style="flex:none" onclick="novoCliente(c=>recCli(c.id))">+ Novo</button></div>
@@ -482,13 +493,24 @@ function listaV(){
   if(!carrinhoV.length)return "";
   return `<div class="tip" style="margin-top:10px"><b>Itens da venda</b>${carrinhoV.map((i,k)=>{const p=D.produtos.find(x=>x.id===i.pid);return `<div class="it" style="padding:6px 0"><div class="t"><b>${i.qtd}x ${esc(p.nome)}</b><small>${money(p.preco)} cada</small></div><b>${money(p.preco*i.qtd)}</b><button class="btn sec" style="padding:4px 10px" onclick="rmItem(${k})" aria-label="Remover item">✕</button></div>`}).join("")}<div style="text-align:right;margin-top:6px">Subtotal: <b class="price">${money(totItens(carrinhoV))}</b></div></div>`;
 }
+const norm=t=>String(t||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+function buscaP(){
+  const q=norm(gv("vbusca").trim()),L=$("#vlista");if(!L)return;
+  const ps=D.produtos.filter(p=>p.estoque>0&&(!q||norm(p.nome).includes(q)||norm(catNome(p.categoria_id)).includes(q)));
+  L.innerHTML=ps.length?ps.map(p=>`<button type="button" class="opt" onclick="escP('${p.id}')">${img(p)}<div class="t"><b>${esc(p.nome)}</b><small>${catNome(p.categoria_id)?esc(catNome(p.categoria_id))+" · ":""}Estoque: ${p.estoque}</small></div><b class="price">${money(p.preco)}</b></button>`).join(""):`<div class="empty" style="padding:18px">Nenhum produto encontrado para "${esc(gv("vbusca"))}".</div>`;
+  L.hidden=false;
+}
+function buscaIn(){$("#vp").value="";$("#vinfo").innerHTML="";prevP();buscaP()}
+function escP(id){const p=D.produtos.find(x=>x.id===id);if(!p)return;$("#vp").value=id;$("#vbusca").value=p.nome;$("#vlista").hidden=true;selP()}
+function buscaKey(e){if(e.key==="Enter"){e.preventDefault();const b=document.querySelector("#vlista .opt");if(b)b.click()}else if(e.key==="Escape"){$("#vlista").hidden=true}}
+document.addEventListener("click",e=>{const l=document.getElementById("vlista");if(l&&!l.hidden&&!e.target.closest("#vbox"))l.hidden=true});
 function addItem(){
   const p=D.produtos.find(x=>x.id===gv("vp")),n=parseInt(gv("vq"));
   if(!p){alert("Selecione o produto.");return}
   if(!n||n<1){alert("Informe a quantidade.");return}
   if(n>disp(p)){alert("Estoque insuficiente. Disponível: "+disp(p)+".");return}
   const e=carrinhoV.find(i=>i.pid===p.id);e?e.qtd+=n:carrinhoV.push({pid:p.id,qtd:n});
-  $("#vp").value="";$("#vq").value="";$("#vinfo").innerHTML="";atualV();
+  $("#vp").value="";$("#vbusca").value="";$("#vq").value="";$("#vinfo").innerHTML="";atualV();
 }
 function atualV(){$("#vitens").innerHTML=listaV();prevP()}
 function rmItem(i){carrinhoV.splice(i,1);atualV()}
@@ -628,56 +650,57 @@ const soma=a=>a.reduce((s,x)=>s+Number(x.valor),0);
 const rest=x=>Math.round((Number(x.valor)-Number(x.valor_pago||0))*100)/100;
 const somaR=a=>Math.round(a.reduce((s,x)=>s+rest(x),0)*100)/100;
 function inicioPer(){const d=new Date();d.setHours(0,0,0,0);if(per==="hoje")return d;if(per==="sem"){d.setDate(d.getDate()-6);return d}if(per==="mes"){d.setDate(1);return d}return new Date(0)}
-const MES=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
-let rper="30",rmet="qtd";
+let rper="30",rmet="qtd",rpz="pag";
 const custoVenda=v=>D.itens.filter(i=>i.venda_id===v.id).reduce((s,i)=>s+Number(i.custo||0)*i.qtd,0);
-const niceMax=v=>{const e=Math.pow(10,Math.floor(Math.log10(v))),f=v/e;return (f<=1?1:f<=2?2:f<=5?5:10)*e};
-const curto=n=>n>=1e6?(n/1e6).toFixed(1).replace(".",",")+" mi":n>=1000?(n/1000).toFixed(n%1000?1:0).replace(".",",")+" mil":String(Math.round(n));
 function periodoRel(){
-  const hj=new Date();hj.setHours(0,0,0,0);let ini=new Date(hj),modo="dia";
+  const hj=new Date();hj.setHours(0,0,0,0);let ini=new Date(hj);
   if(rper==="7")ini.setDate(ini.getDate()-6);
   else if(rper==="30")ini.setDate(ini.getDate()-29);
   else if(rper==="mes")ini.setDate(1);
-  else{ini=new Date(hj.getFullYear(),hj.getMonth()-11,1);modo="mes"}
-  return {ini,modo};
+  else ini=new Date(hj.getFullYear(),hj.getMonth()-11,1);
+  return {ini};
 }
-function serie(ini,modo){
-  const b=[],hj=new Date();hj.setHours(0,0,0,0);
-  if(modo==="dia"){for(let d=new Date(ini);d<=hj;d.setDate(d.getDate()+1))b.push({k:fmtD(d),l:String(d.getDate()),f:0,c:0})}
-  else for(let i=0;i<12;i++){const d=new Date(ini.getFullYear(),ini.getMonth()+i,1);b.push({k:d.getFullYear()+"-"+pad(d.getMonth()+1),l:MES[d.getMonth()],f:0,c:0})}
-  return b;
-}
-function grafico(S,comLucro){
-  const W=340,H=176,pl=38,pb=22,pt=8,pr=4,iw=W-pl-pr,ih=H-pt-pb,mx=niceMax(Math.max(1,...S.map(x=>x.f))),n=S.length,bw=iw/n,g=Math.min(6,bw*.25),w=Math.max(2,bw-g);
-  let o=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Gráfico de faturamento">`;
-  for(let i=0;i<=3;i++){const y=pt+ih-ih*i/3;o+=`<line x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}" stroke="var(--bd)" stroke-dasharray="3 4"/><text x="${pl-6}" y="${y+3.5}" text-anchor="end" font-size="9" fill="var(--mut)">${curto(mx*i/3)}</text>`}
-  const st=Math.ceil(n/7);
-  S.forEach((x,i)=>{
-    const bx=pl+i*bw+g/2,hf=ih*x.f/mx,hl=ih*Math.max(0,x.f-x.c)/mx;
-    if(x.f>0)o+=`<rect x="${bx}" y="${pt+ih-hf}" width="${w}" height="${hf}" rx="${Math.min(4,w/2)}" fill="var(--pri)" opacity="${comLucro?.28:1}"/>`;
-    if(comLucro&&hl>0)o+=`<rect x="${bx+w*.2}" y="${pt+ih-hl}" width="${w*.6}" height="${hl}" rx="${Math.min(3,w*.3)}" fill="var(--pri)"/>`;
-    if(i%st===0)o+=`<text x="${bx+w/2}" y="${H-6}" text-anchor="middle" font-size="9" fill="var(--mut)">${x.l}</text>`;
+const CORES=["var(--pri)","#f59e0b","#14b8a6","#ef4444","#3b82f6","#84cc16","#ec4899","#64748b"];
+function pizza(its){
+  const tot=its.reduce((s,x)=>s+x.v,0);
+  if(!(tot>0))return `<div class="empty">Sem dados no período.</div>`;
+  const R=82,C=88;let a=-Math.PI/2,o=`<svg viewBox="0 0 176 176" role="img" aria-label="Gráfico de pizza">`;
+  its.forEach((x,i)=>{
+    const f=x.v/tot,cor=CORES[i%CORES.length];
+    if(f>=.9999)o+=`<circle cx="${C}" cy="${C}" r="${R}" fill="${cor}"/>`;
+    else{const b=a+f*2*Math.PI,x0=C+R*Math.cos(a),y0=C+R*Math.sin(a),x1=C+R*Math.cos(b),y1=C+R*Math.sin(b);
+      o+=`<path d="M${C} ${C}L${x0.toFixed(2)} ${y0.toFixed(2)}A${R} ${R} 0 ${f>.5?1:0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}Z" fill="${cor}" stroke="var(--card)" stroke-width="2"/>`}
+    if(f>=.08){const m=a+f*Math.PI;o+=`<text x="${(C+R*.62*Math.cos(m)).toFixed(1)}" y="${(C+R*.62*Math.sin(m)).toFixed(1)}" fill="#fff" font-size="12" font-weight="700" text-anchor="middle" dominant-baseline="middle">${Math.round(f*100)}%</text>`}
+    a+=f*2*Math.PI;
   });
-  return o+"</svg>";
+  return `<div class="pz"><div class="pzc">${o}</svg></div><div class="pzl">${its.map((x,i)=>`<div class="ln"><span><i class="dot" style="background:${CORES[i%CORES.length]}"></i>${esc(x.n)}</span><b>${money(x.v)} <small style="color:var(--mut)">${Math.round(x.v/tot*100)}%</small></b></div>`).join("")}<div class="ln tot"><span>Total</span><b>${money(tot)}</b></div></div></div>`;
 }
+const grupar=m=>{const a=Object.entries(m).filter(([,v])=>v>0).sort((x,y)=>y[1]-x[1]),t=a.slice(0,5).map(([n,v])=>({n,v})),o=a.slice(5).reduce((s,[,v])=>s+v,0);if(o>0)t.push({n:"Outros",v:o});return t};
 function vRel(){
-  const {ini,modo}=periodoRel(),VM={};D.vendas.forEach(v=>VM[v.id]=v);
-  const vs=D.vendas.filter(v=>!v.cancelada&&new Date(v.criado_em)>=ini),S=serie(ini,modo),idx={};S.forEach((x,i)=>idx[x.k]=i);
+  const {ini}=periodoRel(),VM={};D.vendas.forEach(v=>VM[v.id]=v);
+  const vs=D.vendas.filter(v=>!v.cancelada&&new Date(v.criado_em)>=ini);
   let fat=0,cus=0,desc=0;
-  vs.forEach(v=>{const d=new Date(v.criado_em),k=modo==="dia"?fmtD(d):d.getFullYear()+"-"+pad(d.getMonth()+1),c=custoVenda(v);fat+=Number(v.total);cus+=c;desc+=Number(v.desconto||0);if(idx[k]!=null){S[idx[k]].f+=Number(v.total);S[idx[k]].c+=c}});
+  vs.forEach(v=>{fat+=Number(v.total);cus+=custoVenda(v);desc+=Number(v.desconto||0)});
   const luc=fat-cus,tem=cus>0,n=vs.length;
+  const its=D.itens.filter(i=>{const v=VM[i.venda_id];return v&&!v.cancelada&&new Date(v.criado_em)>=ini});
   const ag={};
-  D.itens.forEach(i=>{const v=VM[i.venda_id];if(!v||v.cancelada||new Date(v.criado_em)<ini)return;const a=ag[i.produto_nome]=ag[i.produto_nome]||{n:i.produto_nome,q:0,r:0,l:0};a.q+=i.qtd;a.r+=Number(i.subtotal);a.l+=Number(i.subtotal)-Number(i.custo||0)*i.qtd});
+  its.forEach(i=>{const a=ag[i.produto_nome]=ag[i.produto_nome]||{n:i.produto_nome,q:0,r:0,l:0};a.q+=i.qtd;a.r+=Number(i.subtotal);a.l+=Number(i.subtotal)-Number(i.custo||0)*i.qtd});
   const met=(!tem&&rmet==="luc")?"qtd":rmet,key=met==="qtd"?"q":met==="fat"?"r":"l";
   const top=Object.values(ag).sort((a,b)=>b[key]-a[key]).slice(0,6),mx=Math.max(1,...top.map(a=>a[key]));
   const cl={};vs.forEach(v=>{if(!v.cliente_id&&!v.cliente_nome)return;const k=v.cliente_id||v.cliente_nome,a=cl[k]=cl[k]||{n:v.cliente_nome,t:0,q:0};a.t+=Number(v.total);a.q++});
   const tc=Object.values(cl).sort((a,b)=>b.t-a.t).slice(0,5),mc=Math.max(1,...tc.map(a=>a.t));
+  const pm=(!tem&&rpz==="luc")?"pag":rpz;let pz;
+  if(pm==="pag"){const m={};D.pagamentos.filter(x=>ativa(x.venda_id)&&new Date(x.pago_em)>=ini).forEach(x=>{const f=x.forma||"Não informada";m[f]=(m[f]||0)+Number(x.valor)});pz=grupar(m)}
+  else if(pm==="prod"){const m={};its.forEach(i=>{m[i.produto_nome]=(m[i.produto_nome]||0)+Number(i.subtotal)});pz=grupar(m)}
+  else if(pm==="grp"){const m={};its.forEach(i=>{const p=D.produtos.find(x=>x.id===i.produto_id),g=(p&&catNome(p.categoria_id))||"Sem grupo";m[g]=(m[g]||0)+Number(i.subtotal)});pz=grupar(m)}
+  else pz=[{n:"Lucro",v:Math.max(0,luc)},{n:"Custo dos produtos",v:cus}].filter(x=>x.v>0);
+  const tit={pag:"Entradas por forma de pagamento",prod:"Faturamento por produto",grp:"Faturamento por grupo",luc:"Lucro e custo"}[pm];
   const barra=(nome,val,txt,max)=>`<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(nome)}</span><b>${txt}</b></div><div class="bar"><i style="width:${Math.max(3,val/max*100)}%"></i></div></div>`;
   return `<div class="chips">${[["7","7 dias"],["30","30 dias"],["mes","Este mês"],["12m","12 meses"]].map(([k,l])=>`<button class="chip ${rper===k?"on":""}" onclick="rper='${k}';draw()">${l}</button>`).join("")}</div>
   <div class="stats"><div class="stat"><span>Faturamento</span><b>${money(fat)}</b></div><div class="stat"><span>Lucro${tem&&fat?" · margem "+Math.round(luc/fat*100)+"%":""}</span><b>${tem?money(luc):"—"}</b></div><div class="stat"><span>Vendas</span><b>${n}</b></div><div class="stat"><span>Ticket médio</span><b>${money(n?fat/n:0)}</b></div><div class="stat"><span>Descontos dados</span><b>${money(desc)}</b></div></div>
   ${!tem&&fat>0?`<div class="tip" style="margin:0 0 14px">Para ver o <b>lucro</b>, informe o <b>custo</b> de cada produto em Produtos. Vendas antigas ficam sem custo.</div>`:""}
-  <div class="card"><h2>Faturamento ${modo==="dia"?"por dia":"por mês"}</h2>${n?`<div class="lgd"><span><i style="background:var(--pri);opacity:${tem?.3:1}"></i>Faturamento</span>${tem?`<span><i style="background:var(--pri)"></i>Lucro</span>`:""}</div><div class="gr">${grafico(S,tem)}</div>`:`<div class="empty">Nenhuma venda neste período.</div>`}</div>
-  <div class="card"><h2>Produtos mais vendidos</h2><div class="chips" style="padding-bottom:10px">${[["qtd","Quantidade"],["fat","Faturamento"]].concat(tem?[["luc","Lucro"]]:[]).map(([k,l])=>`<button class="chip ${met===k?"on":""}" onclick="rmet='${k}';draw()">${l}</button>`).join("")}</div>${top.length?top.map(a=>barra(a.n,a[key],met==="qtd"?a.q+" un.":money(a[key]),mx)).join("")+(desc>0&&met!=="qtd"?`<small style="color:var(--mut)">Valores por produto não incluem os descontos da venda.</small>`:""):`<div class="empty">Sem vendas no período.</div>`}</div>
+  <div class="card"><h2>${tit}</h2><div class="chips" style="padding-bottom:10px">${[["pag","Pagamento"],["prod","Produtos"],["grp","Grupos"]].concat(tem?[["luc","Lucro x custo"]]:[]).map(([k,l])=>`<button class="chip ${pm===k?"on":""}" onclick="rpz='${k}';draw()">${l}</button>`).join("")}</div>${pizza(pz)}${desc>0&&(pm==="prod"||pm==="grp")?`<small style="color:var(--mut);display:block;margin-top:8px">Valores por produto e grupo não incluem os descontos da venda.</small>`:""}</div>
+  <div class="card"><h2>Produtos mais vendidos</h2><div class="chips" style="padding-bottom:10px">${[["qtd","Quantidade"],["fat","Faturamento"]].concat(tem?[["luc","Lucro"]]:[]).map(([k,l])=>`<button class="chip ${met===k?"on":""}" onclick="rmet='${k}';draw()">${l}</button>`).join("")}</div>${top.length?top.map(a=>barra(a.n,a[key],met==="qtd"?a.q+" un.":money(a[key]),mx)).join(""):`<div class="empty">Sem vendas no período.</div>`}</div>
   <div class="card"><h2>Melhores clientes</h2>${tc.length?tc.map(a=>barra(a.n,a.t,money(a.t)+" · "+a.q+" compra"+(a.q>1?"s":""),mc)).join(""):`<div class="empty">Venda para clientes cadastrados para ver este ranking.</div>`}</div>`;
 }
 function vFin(){
@@ -691,7 +714,7 @@ function vCaixa(){
   const mov=[...R].sort((a,b)=>new Date(b.pago_em)-new Date(a.pago_em)).slice(0,30);
   return `<div class="chips">${[["hoje","Hoje"],["sem","7 dias"],["mes","Este mês"],["tudo","Tudo"]].map(([k,l])=>`<button class="chip ${per===k?"on":""}" onclick="per='${k}';draw()">${l}</button>`).join("")}</div>
   <div class="stats"><div class="stat"><span>Recebido no período</span><b>${money(tot)}</b></div><div class="stat"><span>A receber (parcelas)</span><b>${money(somaR(ab))}</b></div><div class="stat"><span>Em atraso</span><b ${atr.length?'style="color:var(--warn)"':""}>${money(somaR(atr))}</b></div></div>
-  <div class="card"><h2>Como o dinheiro entrou</h2>${lista.length?lista.map(([f,v])=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(f)}</span><b>${money(v)} <small style="color:var(--mut)">${Math.round(v/tot*100)}%</small></b></div><div class="bar"><i style="width:${v/tot*100}%"></i></div></div>`).join(""):`<div class="empty">Nenhuma entrada neste período.</div>`}</div>
+  <div class="card"><h2>Como o dinheiro entrou</h2>${lista.length?pizza(lista.map(([f,v])=>({n:f,v}))):`<div class="empty">Nenhuma entrada neste período.</div>`}</div>
   <div class="card"><h2>Últimas entradas</h2>${mov.length?mov.map(x=>{const v=D.vendas.find(y=>y.id===x.venda_id)||{},pc=D.parcelas.find(y=>y.id===x.parcela_id)||{},rot=pc.numero===0?"Entrada":(pc.numero===1&&(v.n_parcelas||1)<=1)?"Venda à vista":"Parcela "+(pc.numero||"")+"/"+v.n_parcelas;return `<div class="it"><div class="t"><b>${esc(v.cliente_nome||"Cliente avulso")}</b><small>${rot} · ${esc(x.forma||"")} · ${new Date(x.pago_em).toLocaleDateString("pt-BR")} · ${esc(vLabel(v))}</small></div><b>${money(x.valor)}</b></div>`}).join(""):`<div class="empty">Sem movimentações.</div>`}</div>`;
 }
 const chaveCli=v=>v.cliente_id||("n:"+v.cliente_nome);
