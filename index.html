@@ -50,10 +50,20 @@ nav button{min-width:0;padding:8px 2px;font-size:.72rem;line-height:1.2}
 .sw{width:34px;height:34px;border-radius:50%;border:3px solid transparent;cursor:pointer;padding:0}.sw.on{border-color:var(--tx)}
 .bar{height:8px;border-radius:6px;background:var(--bd);overflow:hidden;margin-top:3px}.bar i{display:block;height:100%;background:var(--pri)}
 .late{color:var(--warn);font-weight:600}
+header{position:relative}
+.hm{position:absolute;left:12px;top:14px;width:42px;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.55);background:rgba(255,255,255,.16);color:#fff;font-size:1.35rem;cursor:pointer;line-height:1}
+.hgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}
+.hcard{background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:18px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--tx);font:inherit;cursor:pointer;min-height:118px}
+.hcard:hover{border-color:var(--pri)}.hcard .he{font-size:2.3rem;line-height:1}.hcard b{font-size:1.05rem}.hcard:last-child{grid-column:1/-1;min-height:90px}
+.hb{font-weight:700;text-align:center;color:var(--warn);font-size:.8rem}.hb.r{color:#dc2626}
+.tag{display:inline-block;font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:10px;margin-left:6px;color:#fff;vertical-align:middle;letter-spacing:.03em}
+.tag.atrasado{background:#dc2626}.tag.debito{background:#d97706}
+.cl.atrasado{border-left:5px solid #dc2626;background:rgba(220,38,38,.09);padding-left:10px;border-radius:8px}
+.cl.debito{border-left:5px solid #f59e0b;background:rgba(245,158,11,.12);padding-left:10px;border-radius:8px}
 </style>
 </head>
 <body>
-<header><img id="hl" class="lg" alt="Logo da loja"><h1 id="hn">Minha Loja</h1></header>
+<header><button id="hm" class="hm" onclick="tab='home';draw()" aria-label="Menu inicial" title="Menu inicial" style="display:none">🏠</button><img id="hl" class="lg" alt="Logo da loja"><h1 id="hn">Minha Loja</h1></header>
 <nav id="nav" style="display:none"></nav>
 <main id="app"><div class="empty">Carregando...</div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
@@ -66,7 +76,7 @@ const money=n=>Number(n||0).toLocaleString("pt-BR",{style:"currency",currency:"B
 const slugify=t=>t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
 const q=async p=>{const {data,error}=await p;if(error){alert("Algo deu errado: "+error.message);return null}return data==null?true:data};
 const novo=()=>({produtos:[],categorias:[],clientes:[],vendas:[],parcelas:[],loja:null});
-let D=novo(),tab="produtos",uid=null,edit=null,ec=null,aberto=null,fotosEdit=[],rem=[],gf="",fin="caixa",per="mes",abre=null,cart={},modo="entrar";
+let D=novo(),tab="home",uid=null,edit=null,ec=null,aberto=null,fotosEdit=[],rem=[],gf="",fin="caixa",per="mes",abre=null,cart={},modo="entrar";
 const SLUG=new URLSearchParams(location.search).get("loja");
 // Depois de publicar na Vercel, coloque aqui o endereço do site entre as aspas. Exemplo: "https://minhaloja.vercel.app/"
 const SITE_URL="";
@@ -121,13 +131,15 @@ async function load(){
 function draw(){
   aplicarTema();
   const L=D.loja,lg=$("#hl"),nv=$("#nav");
+  lg.style.width=lg.style.height="";$("#hm").style.display="none";
   $("#hn").textContent=(L&&L.nome)||"Minha Loja";
   if(L&&L.logo_url){lg.src=L.logo_url;lg.style.display="block"}else lg.style.display="none";
   if(SLUG){nv.style.display="none";$("#app").innerHTML=vCat();return}
   if(!uid){nv.style.display="none";$("#app").innerHTML=vAuth();return}
-  nv.style.display="flex";
-  nv.innerHTML=[["produtos","📦","Produtos"],["vendas","🛒","Vendas"],["fin","💵","Financeiro"],["clientes","👥","Clientes"],["config","⚙️","Ajustes"]].map(([k,e,l])=>`<button class="${tab===k?"on":""}" onclick="tab='${k}';draw()"><span style="font-size:1.15rem;display:block">${e}</span>${l}</button>`).join("");
-  $("#app").innerHTML=({produtos:vProd,vendas:vVen,fin:vFin,clientes:vCli,config:vCfg})[tab]();
+  nv.style.display="none";
+  const home=tab==="home";$("#hm").style.display=home?"none":"block";
+  if(home)lg.style.width=lg.style.height="104px";
+  $("#app").innerHTML=({home:vHome,produtos:vProd,vendas:vVen,fin:vFin,clientes:vCli,config:vCfg})[tab]();
 }
 
 /* ENTRAR / CRIAR LOJA */
@@ -150,7 +162,7 @@ function sg(){const s=$("#as");if(!s.dataset.t)s.value=slugify($("#an").value)}
 async function entrar(){
   const {data,error}=await db.auth.signInWithPassword({email:$("#ae").value.trim(),password:$("#ap").value});
   if(error){alert(/confirm/i.test(error.message)?"Seu e-mail ainda não foi confirmado. Abra o link que enviamos para o seu e-mail.":"E-mail ou senha incorretos. Use o olhinho 👁️ para conferir a senha digitada.");return}
-  uid=data.user.id;await load();tab="produtos";draw();
+  uid=data.user.id;await load();tab="home";draw();
 }
 async function criar(){
   const nome=$("#an").value.trim(),slug=slugify($("#as").value),email=$("#ae").value.trim(),senha=$("#ap").value;
@@ -161,7 +173,7 @@ async function criar(){
   const {data,error}=await db.auth.signUp({email,password:senha,options:{data:{nome,slug}}});
   if(error){alert("Não foi possível criar a conta: "+error.message);return}
   if(!data.session){alert("Conta criada! Confirme o link enviado ao seu e-mail e depois entre.");modo="entrar";draw();return}
-  uid=data.user.id;await load();tab="produtos";draw();
+  uid=data.user.id;await load();tab="home";draw();
 }
 async function recuperar(){
   const email=$("#ae").value.trim();if(!email){alert("Digite o seu e-mail.");return}
@@ -175,7 +187,7 @@ async function novaSenha(){
   if(a!==$("#ap2").value){alert("As senhas digitadas não são iguais.");return}
   const {data,error}=await db.auth.updateUser({password:a});
   if(error){alert("Não foi possível alterar a senha: "+error.message);return}
-  history.replaceState(null,"",base());uid=data.user.id;await load();tab="produtos";draw();alert("Senha alterada com sucesso!");
+  history.replaceState(null,"",base());uid=data.user.id;await load();tab="home";draw();alert("Senha alterada com sucesso!");
 }
 async function sair(){if(!confirm("Sair da conta?"))return;await db.auth.signOut();uid=null;D=novo();modo="entrar";draw()}
 
@@ -203,11 +215,11 @@ function enviar(){
 function vProd(){
   const e=edit?D.produtos.find(p=>p.id===edit):null;
   return `<div class="card"><h2>${e?"Editando: "+esc(e.nome):"Novo produto"}</h2>
-  <label>Fotos do produto (até 3)</label><div class="row"><button class="btn" onclick="tirarFoto()">📸 Tirar foto agora</button><button class="btn sec" onclick="if(fotosEdit.length>=3)alert('Máximo de 3 fotos. Exclua uma para adicionar outra.');else $('#gal').click()">🖼️ Escolher da galeria</button></div>
+  <label>Fotos do produto</label><div class="row"><button class="btn" onclick="tirarFoto()">📸 Tirar foto agora</button><button class="btn sec" onclick="if(fotosEdit.length>=3)alert('Máximo de 3 fotos. Exclua uma para adicionar outra.');else $('#gal').click()">🖼️ Escolher da galeria</button></div>
   <input id="cam" type="file" accept="image/*" capture="environment" hidden onchange="lerFoto(this)"><input id="gal" type="file" accept="image/*" hidden onchange="lerFoto(this)">
   <div id="fotos">${fotosHTML()}</div>
   <label>Nome</label><input id="fn" value="${esc(e&&e.nome)}">
-  <label>Grupo / categoria (ex.: Natura, Boticário)</label><input id="fg" list="gl" placeholder="Escolha um grupo ou digite um novo" value="${esc(e&&catNome(e.categoria_id))}"><datalist id="gl">${D.categorias.map(c=>`<option value="${esc(c.nome)}">`).join("")}</datalist>
+  <label>Grupo / categoria</label><input id="fg" list="gl" placeholder="Escolha um grupo ou digite um novo" value="${esc(e&&catNome(e.categoria_id))}"><datalist id="gl">${D.categorias.map(c=>`<option value="${esc(c.nome)}">`).join("")}</datalist>
   <div class="row"><div><label>Preço (R$)</label><input id="fp" type="number" step="0.01" min="0" value="${e?e.preco:""}"></div><div><label>Estoque</label><input id="fe" type="number" min="0" value="${e?e.estoque:""}"></div></div>
   <label>Descrição</label><textarea id="fd" rows="3">${esc(e&&e.descricao)}</textarea>
   <div class="row" style="margin-top:12px"><button id="sv" class="btn" onclick="salvarP()">${e?"Salvar alterações":"Adicionar produto"}</button>${e?`<button class="btn sec" onclick="edit=null;fotosEdit=[];rem=[];draw()">Cancelar</button>`:""}</div></div>
@@ -371,9 +383,9 @@ function vVen(){
   const baixo=D.produtos.filter(p=>p.estoque<=2).length;
   return `<div class="stats"><div class="stat"><span>Total vendido</span><b>${money(tot)}</b></div><div class="stat"><span>Vendas</span><b>${ok.length}</b></div><div class="stat"><span>Estoque baixo</span><b>${baixo}</b></div></div>
   <div class="card"><h2>Registrar venda</h2>
-  <label>Produto</label><select id="vp" onchange="prevP()">${D.produtos.filter(p=>p.estoque>0).map(p=>`<option value="${p.id}" data-p="${p.preco}">${esc(p.nome)} – ${money(p.preco)} (${p.estoque})</option>`).join("")||"<option value=''>Sem produtos em estoque</option>"}</select>
-  <div class="row"><div><label>Quantidade</label><input id="vq" type="number" min="1" value="1" oninput="prevP()"></div><div><label>Cliente</label><select id="vc"><option value="">Cliente avulso</option>${D.clientes.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join("")}</select></div></div>
-  <label>Forma de pagamento</label><select id="vf" onchange="fPag()">${FORMAS.map(opt).join("")}<option>${PARC}</option></select>
+  <label>Produto</label><select id="vp" onchange="selP()"><option value="">Selecione o produto</option>${D.produtos.filter(p=>p.estoque>0).map(p=>`<option value="${p.id}" data-p="${p.preco}">${esc(p.nome)} – ${money(p.preco)} (${p.estoque})</option>`).join("")}</select><div id="vinfo"></div>
+  <div class="row"><div><label>Quantidade</label><input id="vq" type="number" min="1" value="" placeholder="1" oninput="totV();prevP()"></div><div><label>Cliente</label><select id="vc"><option value="">Cliente avulso</option>${D.clientes.map(c=>{const t=stCli(c.id);return `<option value="${c.id}">${esc(c.nome)}${t?(t==="atrasado"?" ⚠ (atrasado)":" ⚠ (em débito)"):""}</option>`}).join("")}</select></div></div>
+  <label>Forma de pagamento</label><select id="vf" onchange="fPag()"><option value="">Selecione a forma de pagamento</option>${FORMAS.map(opt).join("")}<option>${PARC}</option></select>
   <div id="pbox" hidden>
     <div class="row"><div><label>Nº de parcelas</label><input id="vn" type="number" min="2" max="24" value="3" oninput="prevP()"></div><div><label>Entrada hoje (R$, opcional)</label><input id="ve" type="number" min="0" step="0.01" placeholder="0,00" oninput="prevP()"></div></div>
     <div class="row"><div><label>Entrada paga em</label><select id="vef">${FORMAS.map(opt).join("")}</select></div><div><label>1º vencimento</label><input id="vd" type="date" oninput="prevP()"></div></div>
@@ -381,6 +393,17 @@ function vVen(){
     <div class="tip" id="vpv"></div></div>
   <div style="margin-top:12px"><button class="btn" onclick="vender()">Registrar venda</button></div></div>
   <div class="card"><h2>Histórico</h2>${D.vendas.length?[...D.vendas].reverse().map(v=>`<div class="it"><div class="t"><b>${v.qtd}x ${esc(v.produto_nome)}</b><small>${esc(v.cliente_nome||"Cliente avulso")} · ${new Date(v.criado_em).toLocaleDateString("pt-BR")} · ${v.n_parcelas>1?"Parcelado "+v.n_parcelas+"x":esc(v.forma||"")}</small></div><div style="text-align:right"><b ${v.cancelada?'style="text-decoration:line-through;opacity:.5"':""}>${money(v.total)}</b>${v.cancelada?`<small class="low" style="display:block">cancelada</small>`:`<br><button class="btn sec" style="padding:4px 8px;font-size:.75rem" onclick="cancelar('${v.id}')">Cancelar</button>`}</div></div>`).join(""):`<div class="empty">Nenhuma venda registrada.</div>`}</div>`;
+}
+function totV(){
+  const p=D.produtos.find(x=>x.id===$("#vp").value),n=parseInt($("#vq").value)||0,t=$("#vtot");
+  if(t)t.innerHTML=p&&n?"Total: <span class='price'>"+money(Math.round(p.preco*n*100)/100)+"</span>":"";
+}
+function selP(){
+  const p=D.produtos.find(x=>x.id===$("#vp").value),b=$("#vinfo");
+  if(!p){b.innerHTML="";prevP();return}
+  if(!$("#vq").value)$("#vq").value=1;
+  b.innerHTML=`<div class="it" style="margin-top:8px">${img(p)}<div class="t"><b>${esc(p.nome)}</b><small>${catNome(p.categoria_id)?esc(catNome(p.categoria_id))+" · ":""}${esc(p.descricao)}</small><small>${p.estoque} em estoque</small></div><b class="price">${money(p.preco)}</b></div><div id="vtot" style="margin-top:6px;font-weight:600"></div>`;
+  totV();prevP();
 }
 function fPag(){
   const par=$("#vf").value===PARC;$("#pbox").hidden=!par;
@@ -398,9 +421,11 @@ function prevP(){
 }
 async function vender(){
   const p=D.produtos.find(x=>x.id===$("#vp").value),n=parseInt($("#vq").value),c=D.clientes.find(x=>x.id===$("#vc").value);
-  if(!p||!n||n<1)return;
+  if(!p){alert("Selecione o produto.");return}
+  if(!n||n<1){alert("Informe a quantidade.");return}
   if(n>p.estoque){alert("Estoque insuficiente.");return}
-  const forma=$("#vf").value,par=forma===PARC,total=Math.round(p.preco*n*100)/100,agora=new Date().toISOString(),linhas=[];
+  const forma=$("#vf").value;if(!forma){alert("Selecione a forma de pagamento.");return}
+  const par=forma===PARC,total=Math.round(p.preco*n*100)/100,agora=new Date().toISOString(),linhas=[];
   let resumo="";
   if(par){
     if(!c){alert("Para vender parcelado, escolha um cliente cadastrado. Se ele ainda não existe, cadastre na aba Clientes.");return}
@@ -452,7 +477,7 @@ function vReceber(){
   if(!L.length)return `<div class="card"><div class="empty">Nenhuma parcela em aberto. 🎉<br><small>As vendas parceladas aparecem aqui.</small></div></div>`;
   return `<div class="card"><h2>Clientes com parcelas em aberto (${L.length})</h2>${L.map(o=>{
     const pr=o.ps[0],ab=abre===o.k;
-    return `<div class="cl"><b>${esc(o.nome)}</b> ${o.atr?'<span class="late">· atrasada</span>':""}
+    return `<div class="cl ${o.atr?"atrasado":"debito"}"><b>${esc(o.nome)}</b> ${o.atr?'<span class="tag atrasado">ATRASADO</span>':'<span class="tag debito">EM DÉBITO</span>'}
     <div class="m"><span>Faltam: <b>${o.ps.filter(x=>x.numero>0).length} parcela(s)</b></span><span>Em aberto: <b>${money(o.tot)}</b></span><span>Próxima: <b class="${pr.vencimento<hj?"late":""}">${br(pr.vencimento)}</b></span></div>
     <div class="row"><button class="btn sec" data-k="${esc(o.k)}" onclick="abrirR(this.dataset.k)">${ab?"Fechar":"Ver parcelas"}</button><button class="btn sec" data-k="${esc(o.k)}" onclick="cobrar(this.dataset.k)">Cobrar no WhatsApp</button></div>
     ${ab?detParc(o):""}</div>`}).join("")}</div>`;
@@ -482,6 +507,14 @@ function cobrar(k){
   const msg="Olá, "+(v.cliente_nome||"tudo bem")+"! Passando para lembrar da parcela "+x.numero+"/"+v.n_parcelas+" de "+money(x.valor)+", com vencimento em "+br(x.vencimento)+". Qualquer dúvida é só me chamar!";
   window.open("https://wa.me/"+(t.length<=11?"55"+t:t)+"?text="+encodeURIComponent(msg),"_blank");
 }
+const stCli=id=>{const ps=D.parcelas.filter(x=>x.cliente_id===id&&!x.paga&&ativa(x.venda_id));if(!ps.length)return "";return ps.some(x=>x.vencimento<hoje())?"atrasado":"debito"};
+const tagCli=id=>{const s=stCli(id);return s?` <span class="tag ${s}">${s==="atrasado"?"ATRASADO":"EM DÉBITO"}</span>`:""};
+function vHome(){
+  const baixo=D.produtos.filter(p=>p.estoque<=2).length,devendo=D.clientes.filter(c=>stCli(c.id)).length,atras=D.clientes.filter(c=>stCli(c.id)==="atrasado").length;
+  const pAtr=D.parcelas.filter(x=>!x.paga&&ativa(x.venda_id)&&x.vencimento<hoje()).length;
+  const it=[["produtos","📦","Produtos",baixo?baixo+" com estoque baixo":"",""],["vendas","🛒","Vendas","",""],["fin","💵","Financeiro",pAtr?pAtr+" parcela"+(pAtr>1?"s":"")+" atrasada"+(pAtr>1?"s":""):"",pAtr?"r":""],["clientes","👥","Clientes",devendo?devendo+" em débito"+(atras?" ("+atras+" atrasado"+(atras>1?"s":"")+")":""):"",atras?"r":""],["config","⚙️","Ajustes","",""]];
+  return `${D.loja&&D.loja.logo_url?"":`<div class="tip" style="margin:0 0 12px">Dica: em Ajustes você pode colocar a logo da sua loja.</div>`}<div class="hgrid">${it.map(([k,e,l,b,r])=>`<button class="hcard" onclick="tab='${k}';draw()"><span class="he">${e}</span><b>${l}</b>${b?`<small class="hb ${r}">${b}</small>`:""}</button>`).join("")}</div>`;
+}
 const aRec=id=>{const ps=D.parcelas.filter(x=>x.cliente_id===id&&!x.paga&&ativa(x.venda_id));if(!ps.length)return "";return `<small style="display:block;color:var(--pri)">A receber: <b>${money(soma(ps))}</b> · faltam ${ps.length} parcela${ps.length>1?"s":""}</small>`};
 
 /* CLIENTES */
@@ -500,13 +533,13 @@ function vCli(){
   const e=ec?D.clientes.find(c=>c.id===ec):null;
   const L=D.clientes.map(c=>({c,s:stC(c)})).sort((a,b)=>b.s.tot-a.s.tot);
   const at=L.filter(x=>x.s.n&&Date.now()-x.s.ult<30*864e5).length;
-  return `<div class="stats"><div class="stat"><span>Clientes</span><b>${L.length}</b></div><div class="stat"><span>Ativos (30 dias)</span><b>${at}</b></div><div class="stat"><span>Melhor cliente</span><b style="font-size:1rem">${L.length&&L[0].s.tot?esc(L[0].c.nome):"—"}</b></div></div>
+  return `<div class="stats"><div class="stat"><span>Clientes</span><b>${L.length}</b></div><div class="stat"><span>Ativos (30 dias)</span><b>${at}</b></div><div class="stat"><span>Em débito</span><b ${L.some(x=>stCli(x.c.id))?'style="color:#dc2626"':""}>${L.filter(x=>stCli(x.c.id)).length}</b></div><div class="stat"><span>Melhor cliente</span><b style="font-size:1rem">${L.length&&L[0].s.tot?esc(L[0].c.nome):"—"}</b></div></div>
   <div class="card"><h2>${e?"Editando: "+esc(e.nome):"Novo cliente"}</h2>
   <label>Nome</label><input id="kn" value="${esc(e&&e.nome)}">
   <label>Telefone / WhatsApp</label><input id="kt" inputmode="tel" value="${esc(e&&e.telefone)}">
   <label>Endereço</label><input id="ke" value="${esc(e&&e.endereco)}">
   <div class="row" style="margin-top:12px"><button class="btn" onclick="salvarCli()">${e?"Salvar alterações":"Adicionar cliente"}</button>${e?`<button class="btn sec" onclick="ec=null;draw()">Cancelar</button>`:""}</div></div>
-  <div class="card"><h2>Meus clientes</h2>${L.length?L.map(({c,s})=>`<div class="cl"><b>${esc(c.nome)}</b><small style="display:block;color:var(--mut)">${esc(c.telefone)}${c.endereco?" · "+esc(c.endereco):""}</small>
+  <div class="card"><h2>Meus clientes</h2>${L.length?L.map(({c,s})=>`<div class="cl ${stCli(c.id)}"><b>${esc(c.nome)}</b>${tagCli(c.id)}<small style="display:block;color:var(--mut)">${esc(c.telefone)}${c.endereco?" · "+esc(c.endereco):""}</small>
   <div class="m"><span>Compras: <b>${s.n}</b></span><span>Gasto: <b>${money(s.tot)}</b></span><span>Produtos: <b>${s.qt}</b></span></div>
   <small style="display:block;color:var(--mut)">${freq(s)}</small>${aRec(c.id)}
   <div class="row" style="margin-top:8px"><button class="btn sec" onclick="aberto=aberto==='${c.id}'?null:'${c.id}';draw()">Ver compras</button><button class="btn sec" onclick="zapCli('${c.id}')">WhatsApp</button><button class="btn sec" onclick="ec='${c.id}';draw();scrollTo(0,0)">✏️ Editar</button><button class="btn sec" onclick="delCli('${c.id}')">🗑️ Excluir</button></div>
