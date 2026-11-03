@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Minha Loja</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3b1760">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Minha Loja">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -93,6 +101,10 @@ input[type=range]{padding:0;accent-color:var(--pri)}input[type=checkbox]{accent-
 .gr svg{width:100%;height:auto;display:block}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 @media print{body>*:not(#mrec){display:none!important}#mrec{position:static!important;background:#fff!important;padding:0!important;display:block!important;overflow:visible!important}#mrec .card{box-shadow:none!important;border:0!important;margin:0 auto!important;max-width:360px!important}.noprint{display:none!important}}
+.inst{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.inst .he{width:48px;height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--pri);flex:none}
+.inst small{display:block;color:var(--mut);font-size:.8rem}
+.inst .row{width:100%}
 </style>
 </head>
 <body>
@@ -121,6 +133,38 @@ function msgErro(e){
 const q=async p=>{let r;try{r=await p}catch(e){alert("Sem conexão com o servidor. Confira a internet e o histórico antes de tentar de novo.");return null}
   const {data,error}=r;if(error){alert(msgErro(error));return null}return data==null?true:data};
 const uuid=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==="x"?r:(r&3|8)).toString(16)});
+/* INSTALAR NO CELULAR */
+let instEvt=null;
+const lsg=k=>{try{return localStorage.getItem(k)}catch(e){return null}},lss=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+const ehPWA=()=>{try{return matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}catch(e){return false}};
+const ehIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const emAppInterno=()=>/FBAN|FBAV|Instagram|WhatsApp|Messenger|Line\/|; wv\)/i.test(navigator.userAgent);
+const podeInstalar=()=>!ehPWA()&&(!!instEvt||ehIOS());
+const dispensado=()=>Date.now()-Number(lsg("instDispensa")||0)<14*864e5;
+function cartaoInst(){
+  if(!podeInstalar()||dispensado())return "";
+  const nome=esc((D.loja&&D.loja.nome)||"a loja");
+  return `<div class="card inst"><span class="he">${ico("phone",24)}</span><div style="flex:1;min-width:160px"><b>${SLUG?"Tenha "+nome+" sempre à mão":"Instale o programa no celular"}</b><small>${SLUG?"Coloque o catálogo na tela inicial, como um aplicativo.":"Abra com um toque, direto da tela inicial."}</small></div><div class="row"><button class="btn" onclick="instalar()">${instEvt?"Instalar":"Como instalar"}</button><button class="btn sec" onclick="dispensarInst()">Agora não</button></div></div>`;
+}
+async function instalar(){
+  if(instEvt){try{instEvt.prompt();const r=await instEvt.userChoice;if(r&&r.outcome==="accepted")instEvt=null}catch(e){}draw();return}
+  modalInstalar();
+}
+function dispensarInst(){lss("instDispensa",String(Date.now()));draw()}
+function modalInstalar(){
+  const ios=ehIOS();
+  const m=modal(`<h2>Adicionar à tela inicial</h2>${emAppInterno()?`<div class="tip" style="margin:0 0 12px;color:var(--warn)">Você está dentro de outro aplicativo (WhatsApp, Instagram...). Toque nos três pontinhos ou no ícone do navegador e escolha <b>Abrir no ${ios?"Safari":"Chrome"}</b>. Depois siga os passos abaixo.</div>`:""}
+  ${ios?`<ol style="padding-left:20px;line-height:1.9;margin:0"><li>Toque no botão <b>Compartilhar</b> ${ico("share",18)} na barra do Safari.</li><li>Role a lista e toque em <b>Adicionar à Tela de Início</b>.</li><li>Toque em <b>Adicionar</b>.</li></ol>`:`<ol style="padding-left:20px;line-height:1.9;margin:0"><li>Toque no menu <b>⋮</b> do Chrome (canto superior).</li><li>Escolha <b>Instalar aplicativo</b> (ou <b>Adicionar à tela inicial</b>).</li><li>Confirme em <b>Instalar</b>.</li></ol>`}
+  <button class="btn" id="mi2" style="width:100%;margin-top:14px">Entendi</button>`);
+  m.querySelector("#mi2").onclick=()=>m.remove();
+}
+function atualizaPWA(){
+  const L=D.loja;if(!L)return;
+  const nome=L.nome||"Minha Loja",set=(sel,a,v)=>{const e=document.querySelector(sel);if(e&&e.getAttribute(a)!==v)e.setAttribute(a,v)};
+  set('meta[name="apple-mobile-web-app-title"]',"content",nome.slice(0,30));
+  set('meta[name="theme-color"]',"content",mix(corBase(),"#000000",.4));
+  if(location.protocol==="https:")set('link[rel="manifest"]',"href","/api/manifest?n="+encodeURIComponent(nome)+"&c="+encodeURIComponent(corBase())+(SLUG?"&s="+encodeURIComponent(SLUG):""));
+}
 const emUso={};
 async function unico(k,fn){if(emUso[k])return;emUso[k]=1;try{return await fn()}finally{delete emUso[k]}}
 const novo=()=>({produtos:[],categorias:[],clientes:[],vendas:[],parcelas:[],itens:[],pagamentos:[],loja:null});
@@ -162,7 +206,9 @@ trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
 edit:'<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>',
 chat:'<path d="M21 12a8 8 0 01-11.6 7.1L3 21l1.9-6.2A8 8 0 1121 12z"/>',
 eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
-eyeoff:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/>'};
+eyeoff:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M3 3l18 18"/>',
+phone:'<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
+share:'<path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M5 11v9h14v-9"/>'};
 const ico=(n,s=22)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n]}</svg>`;
 const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 const mix=(a,b,t)=>{const A=rgb(a),B=rgb(b);return "#"+A.map((v,i)=>Math.round(v*(1-t)+B[i]*t).toString(16).padStart(2,"0")).join("")};
@@ -176,6 +222,7 @@ function aplicarTema(){
 }
 
 async function init(){
+  if(SLUG)lss("catLoja",SLUG);
   if(SLUG){
     const {data:l}=await db.from("lojas").select("*").eq("slug",SLUG).maybeSingle();
     if(!l){$("#app").innerHTML='<div class="empty">Loja não encontrada.</div>';return}
@@ -186,12 +233,14 @@ async function init(){
   }else{
     await cargaExige();
     const {data:{session}}=await db.auth.getSession();
+    if(!session&&ehPWA()&&!lsg("jaLogou")&&lsg("catLoja")){location.replace("?loja="+encodeURIComponent(lsg("catLoja")));return}
     const rec=location.hash.includes("type=recovery");
     if(rec)modo="nova";else if(session){uid=session.user.id;await load()}
   }
   draw();
 }
 async function load(){
+  lss("jaLogou","1");
   const t=(n,f)=>db.from(n).select("*").eq(f,uid);
   const [l,p,c,k,v,pa,it,pg]=await Promise.all([t("lojas","id"),t("produtos","loja_id"),t("categorias","loja_id"),t("clientes","loja_id"),t("vendas","loja_id"),t("parcelas","loja_id"),t("venda_itens","loja_id"),t("pagamentos","loja_id")]);
   D.loja=(l.data||[])[0]||null;
@@ -202,7 +251,7 @@ async function load(){
   D.parcelas=pa.data||[];D.itens=it.data||[];D.pagamentos=pg.data||[];
 }
 function draw(){
-  aplicarTema();
+  aplicarTema();atualizaPWA();
   const L=D.loja,lg=$("#hl"),nv=$("#nav");
   lg.style.width=lg.style.height="";$("#hm").style.display="none";if(!$("#hm").firstChild)$("#hm").innerHTML=ico("home",22);
   $("#hs").textContent=SLUG?"Catálogo de produtos":!uid?"Gestão de vendas e estoque":({home:"Painel da loja",produtos:"Produtos",vendas:"Vendas",fin:"Financeiro",clientes:"Clientes",config:"Ajustes"})[tab]||"";
@@ -285,6 +334,7 @@ function vCat(){
   const ids=[...new Set(D.produtos.map(p=>p.categoria_id).filter(Boolean))];
   const b=(i,l)=>`<button class="chip ${gf===i?"on":""}" data-g="${i}" onclick="gf=this.dataset.g;draw()">${esc(l)}</button>`;
   let h=ids.length?`<div class="chips">${b("","Todos")}${ids.map(i=>b(i,catNome(i))).join("")}</div>`:"";
+  h=cartaoInst()+h;
   h+=ds.length?`<div class="grid">${ds.map(p=>`<div class="p">${galeria(p)}<div class="i"><b>${esc(p.nome)}</b><small>${esc(p.descricao)}</small><span class="price">${money(p.preco)}</span><button class="btn" onclick="add('${p.id}')">Adicionar</button></div></div>`).join("")}</div>`:`<div class="empty">Nenhum produto disponível no momento.</div>`;
   if(n)h+=`<div class="cart"><button class="btn" onclick="enviar()">Enviar pedido no WhatsApp (${n} ${n>1?"itens":"item"})</button></div>`;
   return h;
@@ -832,7 +882,7 @@ function vHome(){
   const baixo=D.produtos.filter(p=>p.estoque<=2).length,devendo=D.clientes.filter(c=>stCli(c.id)).length,atras=D.clientes.filter(c=>stCli(c.id)==="atrasado").length;
   const fb=devendo?devendo+" cliente"+(devendo>1?"s":"")+" em débito"+(atras?" · "+atras+" atrasado"+(atras>1?"s":""):""):"";
   const it=[["produtos","box","Produtos",baixo?baixo+" com estoque baixo":"",""],["vendas","bag","Vendas","",""],["fin","coin","Financeiro",fb,atras?"r":""],["clientes","users","Clientes","",""],["config","sliders","Ajustes","",""]];
-  return `${D.loja&&D.loja.logo_url?"":`<div class="tip" style="margin:0 0 14px">Dica: em Ajustes você pode colocar a logo da sua loja.</div>`}<div class="hgrid"><button class="hcard main" onclick="enviarCat()"><span class="he">${ico("send",26)}</span><span style="text-align:left"><b>Enviar catálogo</b><small style="display:block;opacity:.85;font-weight:500">Compartilhe o link da loja no WhatsApp</small></span></button>${it.map(([k,e,l,b,r])=>`<button class="hcard" onclick="tab='${k}';draw()"><span class="he">${ico(e,26)}</span><b>${l}</b>${b?`<small class="hb ${r}">${b}</small>`:""}</button>`).join("")}</div>`;
+  return `${D.loja&&D.loja.logo_url?"":`<div class="tip" style="margin:0 0 14px">Dica: em Ajustes você pode colocar a logo da sua loja.</div>`}${cartaoInst()}<div class="hgrid"><button class="hcard main" onclick="enviarCat()"><span class="he">${ico("send",26)}</span><span style="text-align:left"><b>Enviar catálogo</b><small style="display:block;opacity:.85;font-weight:500">Compartilhe o link da loja no WhatsApp</small></span></button>${it.map(([k,e,l,b,r])=>`<button class="hcard" onclick="tab='${k}';draw()"><span class="he">${ico(e,26)}</span><b>${l}</b>${b?`<small class="hb ${r}">${b}</small>`:""}</button>`).join("")}</div>`;
 }
 const aRec=id=>{const ps=D.parcelas.filter(x=>x.cliente_id===id&&!x.paga&&ativa(x.venda_id));if(!ps.length)return "";return `<small style="display:block;color:var(--pri)">A receber: <b>${money(somaR(ps))}</b> · faltam ${ps.length} parcela${ps.length>1?"s":""}</small>`};
 
@@ -895,6 +945,7 @@ function vCfg(){
   <label>Modo</label><div class="chips" style="padding-bottom:4px">${[["auto","Automático"],["claro","Claro"],["escuro","Escuro"]].map(([k,l])=>`<button class="chip ${(L.tema||"auto")===k?"on":""}" onclick="setTema('tema','${k}')">${l}</button>`).join("")}</div>
   <label>Cor do programa</label><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">${Object.entries(PAL).map(([k,[n,h]])=>`<button class="sw ${(L.cor||"acai")===k?"on":""}" title="${n}" aria-label="${n}" style="background:${h}" onclick="setTema('cor','${k}')"></button>`).join("")}<span style="display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--mut)">Outra: <input type="color" value="${corBase()}" onchange="setTema('cor',this.value)" style="width:44px;height:34px;padding:2px"></span></div>
   <small style="color:var(--mut);display:block;margin-top:8px">A cor também aparece no catálogo dos seus clientes. O modo Automático segue o celular de quem está vendo.</small></div>
+  <div class="card"><h2>Instalar no celular</h2><small style="color:var(--mut)">${ehPWA()?"O programa já está instalado neste aparelho.":"Coloque o programa na tela inicial para abrir como um aplicativo, sem digitar o endereço."}</small>${ehPWA()?"":`<div style="margin-top:10px"><button class="btn" onclick="instalar()">${ico("phone",18)} ${instEvt?"Instalar agora":"Como instalar"}</button></div>`}</div>
   <div class="card"><h2>Cópia de segurança</h2><small style="color:var(--mut)">Baixa um arquivo com seus produtos, clientes, vendas e parcelas. Guarde em local seguro de tempos em tempos.</small><div style="margin-top:10px"><button class="btn sec" onclick="backup()">Baixar cópia dos meus dados</button></div></div>
   <div class="card"><b>Conta:</b> <small>entrada com o e-mail cadastrado.</small><div style="margin-top:10px"><button class="btn sec" onclick="sair()">Sair da conta</button></div></div>`;
 }
@@ -926,6 +977,9 @@ function copiar(){const l=base()+"?loja="+D.loja.slug;try{navigator.clipboard.wr
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.closest&&e.target.closest("#auth")){e.preventDefault();const b=$("#abtn");if(b)b.click()}});
 db.auth.onAuthStateChange(ev=>{if(ev==="PASSWORD_RECOVERY"){modo="nova";uid=null;draw()}});
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{aplicarTema()});
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();instEvt=e;if(SLUG||(uid&&tab==="home"))draw()});
+window.addEventListener("appinstalled",()=>{instEvt=null;draw()});
+if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"))window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{})});
 init();
 </script>
 </body>
