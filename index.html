@@ -107,7 +107,22 @@ const $=s=>document.querySelector(s);
 const esc=t=>String(t==null?"":t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const money=n=>Number(n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const slugify=t=>t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
-const q=async p=>{const {data,error}=await p;if(error){alert("Algo deu errado: "+error.message);return null}return data==null?true:data};
+function msgErro(e){
+  const c=e.code||"",m=String(e.message||"");
+  if(c==="P0001")return m;
+  if(/failed to fetch|networkerror|load failed/i.test(m))return "Sem conexão com o servidor. Confira a internet e o histórico antes de tentar de novo.";
+  if(c==="PGRST202"||/could not find the function|does not exist/i.test(m))return "O banco de dados ainda não foi atualizado. Rode o SQL de atualização no Supabase.";
+  if(c==="23514")return "Valor inválido: preço, custo, estoque e quantidades não podem ser negativos.";
+  if(c==="23503")return "Não foi possível concluir: este registro está ligado a outros dados.";
+  if(c==="23505")return "Este registro já existe.";
+  if(c==="42501"||/row-level security|permission denied/i.test(m))return "Sem permissão para esta ação. Se continuar, fale com o suporte.";
+  console.error(e);return "Não foi possível concluir a ação. Tente novamente.";
+}
+const q=async p=>{let r;try{r=await p}catch(e){alert("Sem conexão com o servidor. Confira a internet e o histórico antes de tentar de novo.");return null}
+  const {data,error}=r;if(error){alert(msgErro(error));return null}return data==null?true:data};
+const uuid=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==="x"?r:(r&3|8)).toString(16)});
+const emUso={};
+async function unico(k,fn){if(emUso[k])return;emUso[k]=1;try{return await fn()}finally{delete emUso[k]}}
 const novo=()=>({produtos:[],categorias:[],clientes:[],vendas:[],parcelas:[],itens:[],pagamentos:[],loja:null});
 let D=novo(),tab="home",uid=null,edit=null,ec=null,aberto=null,fotosEdit=[],rem=[],gf="",fin="caixa",per="mes",abre=null,cart={},modo="entrar";
 const SLUG=new URLSearchParams(location.search).get("loja");
@@ -409,16 +424,20 @@ async function up(b,ext){
   if(error){alert("Erro ao enviar a imagem: "+error.message);return null}
   return db.storage.from("fotos").getPublicUrl(path).data.publicUrl;
 }
-async function salvarP(){
-  const nome=$("#fn").value.trim(),preco=parseFloat($("#fp").value),est=parseInt($("#fe").value||"0");
-  if(!nome||isNaN(preco)){alert("Informe pelo menos o nome e o preço.");return}
+function salvarP(){return unico("salvarP",salvarP0)}
+async function salvarP0(){
+  const nome=$("#fn").value.trim(),preco=Number($("#fp").value),custo=$("#fc").value===""?0:Number($("#fc").value),est=$("#fe").value===""?0:Number($("#fe").value);
+  if(!nome||$("#fp").value===""||!isFinite(preco)){alert("Informe pelo menos o nome e o preço.");return}
+  if(preco<0||custo<0||!isFinite(custo)){alert("Preço e custo não podem ser negativos.");return}
+  if(!Number.isInteger(est)||est<0){alert("O estoque precisa ser um número inteiro, de 0 em diante (sem vírgula).");return}
   const bt=$("#sv");bt.disabled=true;bt.textContent="Salvando...";
   const fim=()=>{bt.disabled=false;bt.textContent="Salvar"};
   let cid=null;const gn=$("#fg").value.trim();
   if(gn){let c=D.categorias.find(x=>x.nome.toLowerCase()===gn.toLowerCase());
     if(!c){c=await q(db.from("categorias").insert({nome:gn}).select().single());if(!c){fim();return}}
     cid=c.id}
-  const d={nome,preco,estoque:est,custo:parseFloat($("#fc").value)||0,descricao:$("#fd").value.trim(),categoria_id:cid};
+  const d={nome,preco,estoque:est,custo,descricao:$("#fd").value.trim(),categoria_id:cid};
+  if(edit){const e0=D.produtos.find(x=>x.id===edit);if(e0&&e0.estoque===est)delete d.estoque}
   const urls=[];
   for(const f of fotosEdit){if(f.url)urls.push(f.url);else{const u=await up(f.blob,"jpg");if(!u){fim();return}urls.push(u)}}
   d.fotos=urls;d.foto_url=urls[0]||null;
@@ -426,9 +445,11 @@ async function salvarP(){
   if(!r){fim();return}
   limpar(rem);rem=[];edit=null;fotosEdit=[];await load();draw();
 }
-async function delP(id){
-  const p=D.produtos.find(x=>x.id===id);
-  if(!confirm('Excluir o produto "'+p.nome+'"?\n\nEssa ação não pode ser desfeita.'))return;
+function delP(id){return unico("delP"+id,()=>delP0(id))}
+async function delP0(id){
+  const p=D.produtos.find(x=>x.id===id);if(!p)return;
+  const tem=D.itens.some(i=>i.produto_id===id)||D.vendas.some(v=>v.produto_id===id);
+  if(!confirm('Excluir o produto "'+p.nome+'"?\n\n'+(tem?"Ele já tem vendas registradas: elas continuam no histórico e nos relatórios, mas o produto sai da lista e do catálogo.\n\n":"")+'Essa ação não pode ser desfeita.'))return;
   if(await q(db.from("produtos").delete().eq("id",id))){await load();draw()}
 }
 
@@ -463,8 +484,8 @@ function modal(html,w){
   document.body.appendChild(m);return m;
 }
 function itensV(){
-  const l=carrinhoV.map(i=>({...i})),p=D.produtos.find(x=>x.id===gv("vp")),n=parseInt(gv("vq"));
-  if(p&&n>0){const e=l.find(i=>i.pid===p.id);e?e.qtd+=n:l.push({pid:p.id,qtd:n})}
+  const l=carrinhoV.map(i=>({...i})),p=D.produtos.find(x=>x.id===gv("vp")),n=Number(gv("vq"));
+  if(p&&Number.isInteger(n)&&n>0){const e=l.find(i=>i.pid===p.id);e?e.qtd+=n:l.push({pid:p.id,qtd:n})}
   return l;
 }
 function vVen(){
@@ -485,7 +506,7 @@ function vVen(){
     <div class="row"><div><label>Entrada paga em</label><select id="vef">${FORMAS.map(opt).join("")}</select></div><div><label>1º vencimento</label><input id="vd" type="date" oninput="prevP()"></div></div>
     <label>Intervalo entre as parcelas</label><select id="vi" onchange="prevP()"><option value="mensal">Mensal</option><option value="quinzenal">Quinzenal (15 dias)</option><option value="semanal">Semanal</option></select>
     <div class="tip" id="vpv"></div></div>
-  <div style="margin-top:12px"><button class="btn" onclick="vender()">Registrar venda</button></div></div>
+  <div style="margin-top:12px"><button id="vbtn" class="btn" onclick="vender()">Registrar venda</button></div></div>
   <div class="card"><h2>Histórico</h2>${D.vendas.length?[...D.vendas].reverse().map(v=>`<div class="it"><div class="t"><b>${esc(vLabel(v))}</b><small>${esc(v.cliente_nome||"Cliente avulso")} · ${new Date(v.criado_em).toLocaleDateString("pt-BR")} · ${v.n_parcelas>1?"Parcelado "+v.n_parcelas+"x":esc(v.forma||"")}</small></div><div style="text-align:right"><b ${v.cancelada?'style="text-decoration:line-through;opacity:.5"':""}>${money(v.total)}</b>${v.cancelada?`<small class="low" style="display:block">cancelada</small>`:`<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:4px"><button class="btn sec" style="padding:4px 8px;font-size:.75rem" onclick="recibo('${v.id}')">Recibo</button><button class="btn sec" style="padding:4px 8px;font-size:.75rem" onclick="editarVenda('${v.id}')">Editar</button><button class="btn sec" style="padding:4px 8px;font-size:.75rem" onclick="cancelar('${v.id}')">Cancelar</button></div>`}</div></div>`).join(""):`<div class="empty">Nenhuma venda registrada.</div>`}</div>`;
 }
 function recCli(id){const s=$("#vc");if(!s)return;s.innerHTML=opcCli();s.value=id;prevP()}
@@ -505,17 +526,17 @@ function escP(id){const p=D.produtos.find(x=>x.id===id);if(!p)return;$("#vp").va
 function buscaKey(e){if(e.key==="Enter"){e.preventDefault();const b=document.querySelector("#vlista .opt");if(b)b.click()}else if(e.key==="Escape"){$("#vlista").hidden=true}}
 document.addEventListener("click",e=>{const l=document.getElementById("vlista");if(l&&!l.hidden&&!e.target.closest("#vbox"))l.hidden=true});
 function addItem(){
-  const p=D.produtos.find(x=>x.id===gv("vp")),n=parseInt(gv("vq"));
+  const p=D.produtos.find(x=>x.id===gv("vp")),n=Number(gv("vq"));
   if(!p){alert("Selecione o produto.");return}
-  if(!n||n<1){alert("Informe a quantidade.");return}
+  if(!Number.isInteger(n)||n<1){alert("Informe a quantidade: um número inteiro (sem vírgula), de 1 em diante.");return}
   if(n>disp(p)){alert("Estoque insuficiente. Disponível: "+disp(p)+".");return}
-  const e=carrinhoV.find(i=>i.pid===p.id);e?e.qtd+=n:carrinhoV.push({pid:p.id,qtd:n});
+  const e=carrinhoV.find(i=>i.pid===p.id);e?e.qtd+=n:carrinhoV.push({pid:p.id,qtd:n});reqVenda=uuid();
   $("#vp").value="";$("#vbusca").value="";$("#vq").value="";$("#vinfo").innerHTML="";atualV();
 }
 function atualV(){$("#vitens").innerHTML=listaV();prevP()}
-function rmItem(i){carrinhoV.splice(i,1);atualV()}
+function rmItem(i){carrinhoV.splice(i,1);reqVenda=uuid();atualV()}
 function totV(){
-  const p=D.produtos.find(x=>x.id===gv("vp")),n=parseInt(gv("vq"))||0,t=$("#vtot");
+  const p=D.produtos.find(x=>x.id===gv("vp")),n=(Number.isInteger(Number(gv("vq")))&&Number(gv("vq"))>0)?Number(gv("vq")):0,t=$("#vtot");
   if(t)t.innerHTML=p&&n?"Total deste item: <span class='price'>"+money(Math.round(p.preco*n*100)/100)+"</span>":"";
 }
 function selP(){
@@ -554,49 +575,44 @@ function novoCliente(cb){
   const m=modal(`<h2>Novo cliente</h2><label>Nome</label><input id="nn"><label>Telefone / WhatsApp</label><input id="nt" inputmode="tel"><label>Endereço</label><input id="ne"><div class="row" style="margin-top:12px"><button class="btn sec" id="nx" style="min-width:0">Cancelar</button><button class="btn" id="ns" style="min-width:0">Salvar cliente</button></div>`);
   const Q=x=>m.querySelector(x);Q("#nn").focus();
   Q("#nx").onclick=()=>m.remove();
-  Q("#ns").onclick=async()=>{
+  Q("#ns").onclick=()=>unico("novoCli",async()=>{
     const nome=Q("#nn").value.trim();if(!nome){alert("Informe o nome do cliente.");return}
+    Q("#ns").disabled=true;
     const c=await q(db.from("clientes").insert({nome,telefone:Q("#nt").value.trim(),endereco:Q("#ne").value.trim()}).select().single());
-    if(!c)return;m.remove();await load();cb(c);
-  };
+    if(!c){Q("#ns").disabled=false;return}m.remove();await load();cb(c);
+  });
 }
+let reqVenda=uuid();
 async function vender(){
-  const l=itensV();
-  if(!l.length){alert("Selecione ao menos um produto e a quantidade.");return}
-  for(const i of l){const p=D.produtos.find(x=>x.id===i.pid);if(i.qtd>p.estoque){alert("Estoque insuficiente de "+p.nome+". Disponível: "+p.estoque+".");return}}
-  const forma=gv("vf");if(!forma){alert("Selecione a forma de pagamento.");return}
-  const c=D.clientes.find(x=>x.id===gv("vc")),par=forma===PARC,K=calcV(),total=K.total,agora=new Date().toISOString(),linhas=[];
-  let resumo="";
-  if(K.dv<0||total<=0){alert(K.dv<0?"O desconto não pode ser negativo.":"O desconto não pode ser igual ou maior que o valor da venda.");return}
-  if(par){
-    if(!c){alert("Para vender parcelado, escolha um cliente ou toque em \"+ Novo\" para cadastrar agora.");return}
-    const np=parseInt(gv("vn")),en=parseFloat(gv("ve"))||0,dv=gv("vd");
-    if(!(np>=2&&np<=24)||en<0||en>=total||!dv){alert("Confira o número de parcelas, a entrada (precisa ser menor que o total) e o primeiro vencimento.");return}
-    const pl=plano(total,np,en,dv,gv("vi"));
-    if(en>0)linhas.push({numero:0,valor:en,vencimento:hoje(),paga:true,pago_em:agora,forma:gv("vef")});
-    pl.forEach(x=>linhas.push({...x,paga:false}));
-    resumo="\nParcelado em "+np+"x de "+money(pl[0].valor)+(en>0?" + entrada de "+money(en):"")+"\n1º vencimento: "+br(dv);
-  }else linhas.push({numero:1,valor:total,vencimento:hoje(),paga:true,pago_em:agora,forma});
-  const txt=l.map(i=>i.qtd+"x "+D.produtos.find(x=>x.id===i.pid).nome).join("\n");
-  if(!confirm("Registrar esta venda?\n\n"+txt+"\nCliente: "+(c?c.nome:"Cliente avulso")+(K.desc>0?"\nDesconto: "+money(K.desc):"")+"\nTotal: "+money(total)+"\nPagamento: "+(par?PARC:forma)+resumo))return;
-  const p0=D.produtos.find(x=>x.id===l[0].pid),cid=c?c.id:null;
-  const v=await q(db.from("vendas").insert({produto_id:p0.id,produto_nome:l.length>1?p0.nome+" +"+(l.length-1)+" item(ns)":p0.nome,qtd:l.reduce((a,i)=>a+i.qtd,0),total,desconto:K.desc,cliente_id:cid,cliente_nome:c?c.nome:"",forma:par?PARC:forma,n_parcelas:par?linhas.filter(x=>x.numero>0).length:1}).select().single());
-  if(!v)return;
-  const desfaz=()=>q(db.from("vendas").delete().eq("id",v.id));
-  if(!await q(db.from("venda_itens").insert(l.map(i=>{const p=D.produtos.find(x=>x.id===i.pid);return{venda_id:v.id,produto_id:p.id,produto_nome:p.nome,qtd:i.qtd,preco:p.preco,custo:p.custo||0,subtotal:Math.round(p.preco*i.qtd*100)/100}})))){await desfaz();return}
-  const pr=await q(db.from("parcelas").insert(linhas.map(x=>({...x,valor_pago:x.paga?x.valor:0,venda_id:v.id,cliente_id:cid}))).select());
-  if(!pr){await desfaz();return}
-  const pagos=pr.filter(x=>x.paga).map(x=>({venda_id:v.id,parcela_id:x.id,cliente_id:cid,valor:x.valor,forma:x.forma,pago_em:x.pago_em}));
-  if(pagos.length&&!await q(db.from("pagamentos").insert(pagos))){await desfaz();return}
-  for(const i of l){const p=D.produtos.find(x=>x.id===i.pid);await q(db.from("produtos").update({estoque:p.estoque-i.qtd}).eq("id",p.id))}
-  carrinhoV=[];await load();draw();recibo(v.id,true);
+  return unico("vender",async()=>{
+    const qraw=gv("vq");
+    if(qraw!==""&&(!Number.isInteger(Number(qraw))||Number(qraw)<1)){alert("A quantidade precisa ser um número inteiro (sem vírgula), de 1 em diante.");return}
+    const l=itensV();
+    if(!l.length){alert("Selecione ao menos um produto e a quantidade.");return}
+    for(const i of l){const p=D.produtos.find(x=>x.id===i.pid);if(i.qtd>p.estoque){alert("Estoque insuficiente de "+p.nome+". Disponível: "+p.estoque+".");return}}
+    const forma=gv("vf");if(!forma){alert("Selecione a forma de pagamento.");return}
+    const c=D.clientes.find(x=>x.id===gv("vc")),par=forma===PARC,K=calcV(),total=K.total;
+    if(K.dv<0||total<=0){alert(K.dv<0?"O desconto não pode ser negativo.":"O desconto não pode ser igual ou maior que o valor da venda.");return}
+    if(gv("vdt")==="p"&&K.dv>=100){alert("O desconto em porcentagem precisa ser menor que 100.");return}
+    let resumo="",np=null,en=0,dv=null;
+    if(par){
+      if(!c){alert("Para vender parcelado, escolha um cliente ou toque em \"+ Novo\" para cadastrar agora.");return}
+      np=Number(gv("vn"));en=gv("ve")===""?0:Number(gv("ve"));dv=gv("vd");
+      if(!Number.isInteger(np)||np<2||np>24||!(en>=0)||en>=total||!dv){alert("Confira o número de parcelas (inteiro, de 2 a 24), a entrada (precisa ser menor que o total) e o primeiro vencimento.");return}
+      const pl=plano(total,np,en,dv,gv("vi"));
+      resumo="\nParcelado em "+np+"x de "+money(pl[0].valor)+(en>0?" + entrada de "+money(en):"")+"\n1º vencimento: "+br(dv);
+    }
+    const txt=l.map(i=>i.qtd+"x "+D.produtos.find(x=>x.id===i.pid).nome).join("\n");
+    if(!confirm("Registrar esta venda?\n\n"+txt+"\nCliente: "+(c?c.nome:"Cliente avulso")+(K.desc>0?"\nDesconto: "+money(K.desc):"")+"\nTotal: "+money(total)+"\nPagamento: "+(par?PARC:forma)+resumo))return;
+    const bt=$("#vbtn");if(bt){bt.disabled=true;bt.textContent="Registrando..."}
+    const id=await q(db.rpc("registrar_venda",{p_req:reqVenda,p_cliente:c?c.id:null,p_forma:forma,p_itens:l.map(i=>({produto_id:i.pid,qtd:i.qtd})),p_desc_valor:K.dv,p_desc_tipo:gv("vdt")||"v",p_parcelas:par?np:null,p_entrada:par?en:0,p_entrada_forma:par&&en>0?gv("vef"):null,p_venc1:par?dv:null,p_intervalo:par?gv("vi"):null}));
+    if(!id){if(bt){bt.disabled=false;bt.textContent="Registrar venda"}await load();return}
+    reqVenda=uuid();carrinhoV=[];await load();draw();recibo(id,true);
+  });
 }
 async function cancelar(id){
   const v=D.vendas.find(x=>x.id===id);if(!v||!confirm("Cancelar esta venda e devolver ao estoque?\n\nO dinheiro dela deixa de contar no caixa e as parcelas em aberto somem da lista de cobrança."))return;
-  if(!await q(db.from("vendas").update({cancelada:true}).eq("id",id)))return;
-  const it=D.itens.filter(i=>i.venda_id===id),lista=it.length?it.map(i=>({pid:i.produto_id,qtd:i.qtd})):[{pid:v.produto_id,qtd:v.qtd}];
-  for(const i of lista){const p=D.produtos.find(x=>x.id===i.pid);if(p)await q(db.from("produtos").update({estoque:p.estoque+i.qtd}).eq("id",p.id))}
-  await load();draw();
+  return unico("cancelar"+id,async()=>{await q(db.rpc("cancelar_venda",{p_venda:id}));await load();draw()});
 }
 function editarVenda(id){
   const v=D.vendas.find(x=>x.id===id),par=(v.n_parcelas||1)>1||v.forma===PARC;
@@ -608,15 +624,14 @@ function editarVenda(id){
   Q("#ec").value=v.cliente_id||"";if(!par)Q("#ef").value=v.forma;
   Q("#en").onclick=()=>novoCliente(c=>{Q("#ec").innerHTML=(par?opcCli().replace('<option value="">Cliente avulso</option>',""):opcCli());Q("#ec").value=c.id});
   Q("#ex").onclick=()=>m.remove();
-  Q("#es").onclick=async()=>{
-    const c=D.clientes.find(x=>x.id===Q("#ec").value),cid=c?c.id:null;
+  Q("#es").onclick=()=>unico("editar"+id,async()=>{
+    const c=D.clientes.find(x=>x.id===Q("#ec").value);
     if(par&&!c){alert("Venda parcelada precisa de um cliente.");return}
     const forma=par?v.forma:Q("#ef").value;
-    if(!await q(db.from("vendas").update({cliente_id:cid,cliente_nome:c?c.nome:"",forma}).eq("id",id)))return;
-    await q(db.from("parcelas").update(par?{cliente_id:cid}:{cliente_id:cid,forma}).eq("venda_id",id));
-    await q(db.from("pagamentos").update(par?{cliente_id:cid}:{cliente_id:cid,forma}).eq("venda_id",id));
+    Q("#es").disabled=true;
+    if(!await q(db.rpc("editar_venda",{p_venda:id,p_cliente:c?c.id:null,p_forma:forma}))){Q("#es").disabled=false;await load();return}
     m.remove();await load();draw();
-  };
+  });
 }
 
 function recibo(id,nova){
@@ -746,6 +761,7 @@ function alocar(ps,valor){
 }
 function abrirReceb(k,pid){
   let ps=parcsCli(k);if(!ps.length)return;
+  const reqRec=uuid();
   if(pid){const f=ps.find(x=>x.id===pid);if(f)ps=[f,...ps.filter(x=>x!==f)]}
   const v0=D.vendas.find(y=>y.id===ps[0].venda_id),max=somaR(ps);
   const m=modal(`<h2>Receber pagamento</h2><small style="color:var(--mut)">${esc(v0.cliente_nome||"Cliente")} · em aberto: <b>${money(max)}</b></small>
@@ -762,24 +778,21 @@ function abrirReceb(k,pid){
   };
   Q("#rv").oninput=pv;pv();
   Q("#rx").onclick=()=>m.remove();
-  Q("#ro").onclick=async()=>{
+  Q("#ro").onclick=()=>unico("receber",async()=>{
     const v=val(),f=Q("#rf").value;
     if(v<=0){alert("Informe o valor recebido.");return}
     if(v>max+0.004){alert("O valor é maior que o total em aberto ("+money(max)+").");return}
     if(!f){alert("Selecione a forma de recebimento.");return}
-    const {out}=alocar(ps,v),agora=new Date().toISOString();
-    if(!await q(db.from("pagamentos").insert(out.map(a=>({venda_id:a.x.venda_id,parcela_id:a.x.id,cliente_id:a.x.cliente_id,valor:a.v,forma:f,pago_em:agora})))))return;
-    for(const a of out){const n=Math.round((Number(a.x.valor_pago||0)+a.v)*100)/100;await q(db.from("parcelas").update({valor_pago:n,paga:n>=Number(a.x.valor)-0.004}).eq("id",a.x.id))}
+    const bt=Q("#ro");bt.disabled=true;bt.textContent="Registrando...";
+    const semId=k.startsWith("n:");
+    await q(db.rpc("receber_pagamento",{p_req:reqRec,p_cliente:semId?null:k,p_nome:semId?k.slice(2):null,p_primeira:pid||null,p_valor:v,p_forma:f,p_saldo_tela:max}));
     m.remove();await load();draw();
-  };
+  });
 }
 async function estornar(id){
   const g=D.pagamentos.find(y=>y.id===id);if(!g)return;
   if(!confirm("Estornar este recebimento de "+money(g.valor)+" ("+(g.forma||"")+")?\nO valor sai do caixa e volta para o que o cliente deve."))return;
-  const p=D.parcelas.find(x=>x.id===g.parcela_id);
-  if(!await q(db.from("pagamentos").delete().eq("id",id)))return;
-  if(p){const n=Math.max(0,Math.round((Number(p.valor_pago||0)-Number(g.valor))*100)/100);await q(db.from("parcelas").update({valor_pago:n,paga:n>=Number(p.valor)-0.004}).eq("id",p.id))}
-  await load();draw();
+  return unico("estornar"+id,async()=>{await q(db.rpc("estornar_pagamento",{p_pag:id}));await load();draw()});
 }
 function cobrar(k){
   const ps=parcsCli(k);if(!ps.length)return;
@@ -851,13 +864,15 @@ function vCli(){
   <div class="row" style="margin-top:8px"><button class="btn sec" onclick="aberto=aberto==='${c.id}'?null:'${c.id}';draw()">Ver compras</button><button class="btn sec" onclick="zapCli('${c.id}')">WhatsApp</button><button class="btn sec" onclick="ec='${c.id}';draw();scrollTo(0,0)">${ico("edit",16)} Editar</button><button class="btn sec" onclick="delCli('${c.id}')">${ico("trash",16)} Excluir</button></div>
   ${aberto===c.id?'<div class="tip">'+(s.vs.length?[...s.vs].reverse().map(v=>esc(vLabel(v))+" – "+money(v.total)+" · "+new Date(v.criado_em).toLocaleDateString("pt-BR")).join("<br>"):"Nenhuma compra registrada.")+"</div>":""}</div>`).join(""):`<div class="empty">Nenhum cliente cadastrado.</div>`}</div>`;
 }
-async function salvarCli(){
+function salvarCli(){return unico("salvarCli",salvarCli0)}
+async function salvarCli0(){
   const nome=$("#kn").value.trim();if(!nome){alert("Informe o nome do cliente.");return}
   const d={nome,telefone:$("#kt").value.trim(),endereco:$("#ke").value.trim()};
   if(!await q(ec?db.from("clientes").update(d).eq("id",ec):db.from("clientes").insert(d)))return;
   ec=null;await load();draw();
 }
-async function delCli(id){
+function delCli(id){return unico("delCli"+id,()=>delCli0(id))}
+async function delCli0(id){
   const c=D.clientes.find(x=>x.id===id);
   if(!confirm('Excluir o cliente "'+c.nome+'"?\n\nEssa ação não pode ser desfeita. As vendas já registradas continuam no histórico de vendas.'))return;
   if(await q(db.from("clientes").delete().eq("id",id))){if(ec===id)ec=null;await load();draw()}
